@@ -256,7 +256,7 @@ class PauseSettingsDialog(QDialog):
         self.setLayout(self.layout)
 
     def create_spin(self, val):
-        sb = QSpinBox() # Using Int for simplicity or Double for precision? Let's use Double.
+        sb = QSpinBox() # Double
         from PyQt6.QtWidgets import QDoubleSpinBox
         dsb = QDoubleSpinBox()
         dsb.setRange(1.0, 5.0)
@@ -534,14 +534,14 @@ class WordDisplay(QMainWindow):
             self.progress_bar.setValue(self.index)
             self.update_context_view()
 
-    # --- NEW TIMER LOGIC ---
+    # --- TIMER LOGIC ---
     def schedule_next_word(self):
         if not self.is_running: return
         
         # Calculate Base Delay
         base_ms = int(60000 / self.wpm)
         
-        # Determine multiplier based on CURRENT word punctuation
+        # Different times for different punctuations
         multiplier = 1.0
         if self.index < len(self.words):
             current_word = self.words[self.index]
@@ -551,7 +551,8 @@ class WordDisplay(QMainWindow):
                 multiplier = self.delays['period']
             elif last_char in [',', ':', ';']:
                 multiplier = self.delays['comma']
-            elif '-' in current_word: # Hyphens often inside words
+            # Choosing to pause if hyphen mid-word too, might delete
+            elif '-' in current_word: 
                 multiplier = self.delays['hyphen']
         
         actual_delay = int(base_ms * multiplier)
@@ -564,7 +565,7 @@ class WordDisplay(QMainWindow):
             self.rsvp_display.set_word(self.words[self.index])
             self.progress_bar.setValue(self.index)
             self.update_context_view()
-            self.schedule_next_word() # Recursively schedule next
+            self.schedule_next_word()
         else:
             self.rsvp_display.set_word("Finished")
             self.is_running = False
