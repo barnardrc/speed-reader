@@ -2,13 +2,14 @@ import sys
 import os
 import json
 import zipfile
+import html
 import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 from PyQt6.QtWidgets import (
     QApplication, QLabel, QVBoxLayout, QWidget, 
     QSlider, QHBoxLayout, QProgressBar, QFileDialog,
     QSpinBox, QPushButton, QListWidget, QListWidgetItem,
-    QSizePolicy, QFrame, QMainWindow, QStackedLayout, QDialog, QFormLayout, QDialogButtonBox
+    QSizePolicy, QFrame, QMainWindow, QDialog, QFormLayout, QDialogButtonBox, QMessageBox
 )
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QPainter, QFont, QFontMetrics, QColor, QPen
@@ -93,7 +94,8 @@ QListWidget::item:selected {
 def load_settings():
     defaults = {
         "wpm": 300, 
-        "opacity": 30, 
+        "opacity": 50, # Default higher so text is visible
+        "context_range": 20, 
         "period_delay": 2.0, 
         "comma_delay": 1.5, 
         "hyphen_delay": 1.2,
@@ -227,7 +229,6 @@ class RSVPWidget(QWidget):
         painter.drawText(pivot_x - left_width, cy, left_part)
         painter.drawText(pivot_x + pivot_width, cy, right_part)
 
-# --- New Dialog for Delay Settings ---
 class PauseSettingsDialog(QDialog):
     def __init__(self, settings, parent=None):
         super().__init__(parent)
@@ -236,7 +237,6 @@ class PauseSettingsDialog(QDialog):
         self.layout = QVBoxLayout()
 
         form = QFormLayout()
-        
         self.spin_period = self.create_spin(settings.get("period_delay", 2.0))
         form.addRow("End of Sentence (. ? !):", self.spin_period)
 
@@ -256,7 +256,6 @@ class PauseSettingsDialog(QDialog):
         self.setLayout(self.layout)
 
     def create_spin(self, val):
-        sb = QSpinBox() # Double
         from PyQt6.QtWidgets import QDoubleSpinBox
         dsb = QDoubleSpinBox()
         dsb.setRange(1.0, 5.0)
@@ -272,32 +271,28 @@ class PauseSettingsDialog(QDialog):
         }
 
 class WordDisplay(QMainWindow):
-    def __init__(self, words, chapters, file_path):
+    def __init__(self):
         super().__init__()
-        self.words = words
-        self.chapters = chapters
-        self.file_path = file_path
+        self.words = []
+        self.chapters = []
+        self.file_path = ""
         self.is_running = False
+        self.index = 0
         
         self.setStyleSheet(DARK_THEME)
-        
         self.settings = load_settings()
         self.wpm = self.settings.get("wpm", 300)
-        self.opacity = self.settings.get("opacity", 30)
+        self.opacity = self.settings.get("opacity", 50)
+        self.ctx_range = self.settings.get("context_range", 20)
         
-        # Load custom delay settings
         self.delays = {
             "period": self.settings.get("period_delay", 2.0),
             "comma": self.settings.get("comma_delay", 1.5),
             "hyphen": self.settings.get("hyphen_delay", 1.2)
         }
 
-        saved_index = self.settings.get("books", {}).get(self.file_path, 0)
-        self.index = min(saved_index, len(self.words) - 1) if self.words else 0
-
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
-        
         self.main_layout = QHBoxLayout()
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.central_widget.setLayout(self.main_layout)
@@ -311,54 +306,56 @@ class WordDisplay(QMainWindow):
         self.chapter_list = QListWidget()
         self.chapter_list.setFrameShape(QFrame.Shape.NoFrame)
         self.chapter_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        for title, idx in self.chapters:
-            item = QListWidgetItem(title)
-            item.setData(Qt.ItemDataRole.UserRole, idx)
-            self.chapter_list.addItem(item)
         self.chapter_list.itemClicked.connect(self.on_chapter_clicked)
         self.sidebar_layout.addWidget(self.chapter_list)
         self.sidebar.setLayout(self.sidebar_layout)
         self.main_layout.addWidget(self.sidebar)
 
-        # Content Area
+        # Content
         self.content_widget = QWidget()
         self.content_layout = QVBoxLayout()
         
         top = QHBoxLayout()
-        btn = QPushButton("☰ Menu")
-        btn.setFixedSize(80, 30)
-        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        btn.clicked.connect(lambda: self.sidebar.setVisible(not self.sidebar.isVisible()))
-        top.addWidget(btn)
+        btn_open = QPushButton("Open Book")
+        btn_open.setFixedSize(100, 30)
+        btn_open.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn_open.clicked.connect(self.open_file_dialog)
+        top.addWidget(btn_open)
+
+        btn_menu = QPushButton("☰ List")
+        btn_menu.setFixedSize(80, 30)
+        btn_menu.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn_menu.clicked.connect(lambda: self.sidebar.setVisible(not self.sidebar.isVisible()))
+        top.addWidget(btn_menu)
+        
         top.addStretch()
         self.content_layout.addLayout(top)
         
         self.content_layout.addStretch()
         
-        # Stacked Display
+        # Display Container
         self.display_container = QWidget()
-        self.display_container.setFixedHeight(300) 
-        self.stack_layout = QStackedLayout()
-        self.stack_layout.setStackingMode(QStackedLayout.StackingMode.StackAll)
+        self.display_layout = QVBoxLayout()
         
+        # 1. Context Label (Top)
         self.context_label = QLabel()
         self.context_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.context_label.setWordWrap(True)
-        self.context_label.setTextFormat(Qt.TextFormat.PlainText)
-        self.context_label.setStyleSheet(f"font-size: 20px; font-family: 'Georgia'; color: rgba(255, 255, 255, {self.opacity/100});")
-        self.stack_layout.addWidget(self.context_label)
+        self.context_label.setTextFormat(Qt.TextFormat.RichText)
+        # We only set font size here; color is handled in update_context_view to support opacity
+        self.context_label.setStyleSheet(f"font-size: 20px; font-family: 'Georgia';")
+        self.display_layout.addWidget(self.context_label, stretch=1)
 
+        # 2. RSVP Widget (Bottom)
         self.rsvp_display = RSVPWidget()
-        self.stack_layout.addWidget(self.rsvp_display)
+        self.display_layout.addWidget(self.rsvp_display, stretch=1)
         
-        self.display_container.setLayout(self.stack_layout)
-        self.content_layout.addWidget(self.display_container)
+        self.display_container.setLayout(self.display_layout)
+        self.content_layout.addWidget(self.display_container, stretch=2) 
 
         self.content_layout.addStretch()
 
         self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, len(self.words))
-        self.progress_bar.setValue(self.index)
         self.content_layout.addWidget(self.progress_bar)
 
         nav = QHBoxLayout()
@@ -388,8 +385,6 @@ class WordDisplay(QMainWindow):
         controls.addWidget(self.slider)
 
         controls.addSpacing(10)
-        
-        # Opacity Slider
         controls.addWidget(QLabel("Op:"))
         self.op_slider = QSlider(Qt.Orientation.Horizontal)
         self.op_slider.setRange(0, 100)
@@ -400,33 +395,75 @@ class WordDisplay(QMainWindow):
         controls.addWidget(self.op_slider)
 
         controls.addSpacing(10)
+        controls.addWidget(QLabel("Ctx Range:"))
+        self.ctx_slider = QSlider(Qt.Orientation.Horizontal)
+        self.ctx_slider.setRange(5, 100)
+        self.ctx_slider.setValue(self.ctx_range)
+        self.ctx_slider.setFixedWidth(80)
+        self.ctx_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.ctx_slider.valueChanged.connect(self.update_ctx_range)
+        controls.addWidget(self.ctx_slider)
 
-        # Pause Settings Button
+        controls.addSpacing(10)
         self.btn_pauses = QPushButton("Pauses")
         self.btn_pauses.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_pauses.clicked.connect(self.open_pause_settings)
         controls.addWidget(self.btn_pauses)
-
         controls.addStretch()
         self.content_layout.addLayout(controls)
 
         self.content_widget.setLayout(self.content_layout)
         self.main_layout.addWidget(self.content_widget)
 
-        self.resize(1000, 600)
-        
-        # Timer Setup
+        self.resize(1000, 700)
         self.timer = QTimer()
-        self.timer.setSingleShot(True) # Crucial for variable delays
+        self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.show_next_word)
         
-        if self.index > 0: self.update_display_manual()
+        self.setFocus()
+
+    def open_file_dialog(self):
+        if self.file_path:
+            self.persist_state()
+            
+        if self.is_running:
+            self.toggle_reading()
+
+        file_path, _ = QFileDialog.getOpenFileName(self, "Open EPUB", "", "EPUB Files (*.epub)")
+        if file_path:
+            self.load_book(os.path.abspath(file_path))
+
+    def load_book(self, file_path):
+        print(f"Loading: {file_path}")
+        words, chapters = get_words_and_chapters(file_path)
+        
+        if not words:
+            QMessageBox.critical(self, "Error", "Failed to load book or book is empty.")
+            return
+
+        self.words = words
+        self.chapters = chapters
+        self.file_path = file_path
+        
+        saved_index = self.settings.get("books", {}).get(self.file_path, 0)
+        self.index = min(saved_index, len(self.words) - 1)
+
+        self.chapter_list.clear()
+        for title, idx in self.chapters:
+            item = QListWidgetItem(title)
+            item.setData(Qt.ItemDataRole.UserRole, idx)
+            self.chapter_list.addItem(item)
+
+        self.progress_bar.setRange(0, len(self.words))
+        self.progress_bar.setValue(self.index)
+
+        self.update_display_manual()
         self.highlight_current_chapter()
         self.setFocus()
 
     def open_pause_settings(self):
         was_running = self.is_running
-        if was_running: self.toggle_reading() # Pause while editing
+        if was_running: self.toggle_reading()
         
         dlg = PauseSettingsDialog(self.settings, self)
         if dlg.exec():
@@ -438,21 +475,80 @@ class WordDisplay(QMainWindow):
                 "hyphen": vals["hyphen_delay"]
             }
             save_settings(self.settings)
-            
         self.setFocus()
 
     def update_opacity(self):
         self.opacity = self.op_slider.value()
-        alpha = self.opacity / 100.0
-        self.context_label.setStyleSheet(f"font-size: 20px; font-family: 'Georgia'; color: rgba(255, 255, 255, {alpha});")
+        self.update_context_view()
         self.setFocus()
 
+    def update_ctx_range(self):
+        self.ctx_range = self.ctx_slider.value()
+        self.update_context_view()
+        self.setFocus()
+
+    def find_sentence_bounds(self):
+        s_start = self.index
+        limit = 100 
+        
+        i = self.index - 1
+        count = 0
+        while i >= 0 and count < limit:
+            w = self.words[i]
+            if w and w[-1] in ['.', '?', '!']:
+                s_start = i + 1
+                break
+            if i == 0:
+                s_start = 0
+            i -= 1
+            count += 1
+            
+        s_end = self.index
+        i = self.index
+        count = 0
+        while i < len(self.words) and count < limit:
+            w = self.words[i]
+            if w and w[-1] in ['.', '?', '!']:
+                s_end = i
+                break
+            i += 1
+            count += 1
+        
+        return s_start, s_end
+
     def update_context_view(self):
-        start = max(0, self.index - 20)
-        end = min(len(self.words), self.index + 20)
-        context_words = [self.words[i] for i in range(start, end)]
-        full_text = " ".join(context_words)
-        self.context_label.setText(full_text)
+        if not self.words: return
+        
+        start = max(0, self.index - self.ctx_range)
+        end = min(len(self.words), self.index + self.ctx_range)
+        
+        s_start, s_end = self.find_sentence_bounds()
+        
+        # Calculate standard text color with opacity
+        alpha = self.opacity / 100.0
+        standard_color = f"rgba(255, 255, 255, {alpha})"
+        
+        html_output = []
+        for i in range(start, end):
+            word_text = html.escape(self.words[i])
+            
+            bg_color = "transparent"
+            fg_color = standard_color # White with opacity
+            
+            # Sentence Highlighting
+            if s_start <= i <= s_end:
+                bg_color = "rgba(255, 255, 255, 0.1)"
+            
+            # Active Word Highlighting
+            if i == self.index:
+                bg_color = "#ffd700"
+                fg_color = "#000000" # Black text on active
+            
+            html_output.append(
+                f"<span style='background-color: {bg_color}; color: {fg_color};'>{word_text}</span>"
+            )
+        
+        self.context_label.setText(" ".join(html_output))
 
     def on_chapter_clicked(self, item):
         self.index = item.data(Qt.ItemDataRole.UserRole)
@@ -461,6 +557,7 @@ class WordDisplay(QMainWindow):
         self.setFocus()
 
     def keyPressEvent(self, e):
+        if not self.words: return
         if e.key() == Qt.Key.Key_Space:
             self.toggle_reading()
         elif e.key() == Qt.Key.Key_Left:
@@ -485,7 +582,7 @@ class WordDisplay(QMainWindow):
         self.slider.setValue(new_wpm) 
 
     def mousePressEvent(self, e):
-        if self.childAt(e.pos()) not in [self.slider, self.op_slider, self.pct_btn, self.pct_spin, self.btn_pauses]:
+        if self.childAt(e.pos()) not in [self.slider, self.op_slider, self.ctx_slider, self.pct_btn, self.pct_spin, self.btn_pauses]:
             self.setFocus()
             self.toggle_reading()
 
@@ -494,14 +591,17 @@ class WordDisplay(QMainWindow):
         e.accept()
 
     def persist_state(self):
+        if not self.file_path: return
         self.settings["wpm"] = self.wpm
         self.settings["opacity"] = self.opacity
+        self.settings["context_range"] = self.ctx_range
         if "books" not in self.settings: self.settings["books"] = {}
         self.settings["books"][self.file_path] = self.index
         save_settings(self.settings)
 
     def toggle_reading(self):
         self.setFocus()
+        if not self.words: return
         if self.is_running:
             self.timer.stop()
             self.is_running = False
@@ -513,15 +613,16 @@ class WordDisplay(QMainWindow):
     def update_speed_from_slider(self):
         self.wpm = self.slider.value()
         self.wpm_label.setText(f"{self.wpm}")
-        # Only restart if running, logic handled in schedule_next_word
         
     def jump_to_percentage(self):
+        if not self.words: return
         self.index = int((self.pct_spin.value() / 100) * len(self.words))
         self.update_display_manual()
         self.highlight_current_chapter()
         self.setFocus()
 
     def highlight_current_chapter(self):
+        if not self.chapters: return
         r = 0
         for i, (t, s) in enumerate(self.chapters):
             if s <= self.index: r = i
@@ -529,21 +630,18 @@ class WordDisplay(QMainWindow):
         self.chapter_list.setCurrentRow(r)
 
     def update_display_manual(self):
-        if self.index < len(self.words):
+        if self.words and self.index < len(self.words):
             self.rsvp_display.set_word(self.words[self.index])
             self.progress_bar.setValue(self.index)
             self.update_context_view()
 
-    # --- TIMER LOGIC ---
     def schedule_next_word(self):
         if not self.is_running: return
         
-        # Calculate Base Delay
         base_ms = int(60000 / self.wpm)
-        
-        # Different times for different punctuations
         multiplier = 1.0
-        if self.index < len(self.words):
+        
+        if self.words and self.index < len(self.words):
             current_word = self.words[self.index]
             last_char = current_word[-1] if current_word else ""
             
@@ -551,8 +649,7 @@ class WordDisplay(QMainWindow):
                 multiplier = self.delays['period']
             elif last_char in [',', ':', ';']:
                 multiplier = self.delays['comma']
-            # Choosing to pause if hyphen mid-word too, might delete
-            elif '-' in current_word: 
+            elif '-' in current_word:
                 multiplier = self.delays['hyphen']
         
         actual_delay = int(base_ms * multiplier)
@@ -560,7 +657,6 @@ class WordDisplay(QMainWindow):
 
     def show_next_word(self):
         self.index += 1
-        
         if self.index < len(self.words):
             self.rsvp_display.set_word(self.words[self.index])
             self.progress_bar.setValue(self.index)
@@ -573,10 +669,6 @@ class WordDisplay(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    f, _ = QFileDialog.getOpenFileName(None, "Open EPUB", "", "EPUB Files (*.epub)")
-    if f:
-        w, c = get_words_and_chapters(os.path.abspath(f))
-        if w:
-            WordDisplay(w, c, os.path.abspath(f)).show()
-            sys.exit(app.exec())
-    sys.exit()
+    window = WordDisplay()
+    window.show()
+    sys.exit(app.exec())
