@@ -3,93 +3,24 @@ import os
 import json
 import zipfile
 import html
+import pypdf
 import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
+from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication, QLabel, QVBoxLayout, QWidget, 
     QSlider, QHBoxLayout, QProgressBar, QFileDialog,
     QSpinBox, QPushButton, QListWidget, QListWidgetItem,
-    QSizePolicy, QFrame, QMainWindow, QDialog, QFormLayout, QDialogButtonBox, QMessageBox
+    QSizePolicy, QFrame, QMainWindow, QDialog, QFormLayout, 
+    QDialogButtonBox, QMessageBox, QProgressDialog, QTextBrowser
 )
-from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtGui import QPainter, QFont, QFontMetrics, QColor, QPen
+from PyQt6.QtGui import QPainter, QFont, QFontMetrics, QColor, QPen, QTextCursor
+from utils.style_sheet import DARK_THEME
+from ui.dialogs import PauseSettingsDialog
+from ui.widgets import RSVPWidget, ContextFlowWidget
+from utils.text_utils import is_header
 
 SETTINGS_FILE = "speed_reader_settings.json"
-
-DARK_THEME = """
-QMainWindow, QWidget, QDialog {
-    background-color: #1e1e1e;
-    color: #e0e0e0;
-    font-family: 'Segoe UI', sans-serif;
-}
-QLabel {
-    color: #ffffff;
-}
-QProgressBar {
-    border: 2px solid #444;
-    border-radius: 5px;
-    text-align: center;
-    color: white;
-    background-color: #2d2d2d;
-}
-QProgressBar::chunk {
-    background-color: #3a86ff; 
-    width: 10px; 
-}
-QPushButton {
-    background-color: #333;
-    border: 1px solid #555;
-    border-radius: 4px;
-    padding: 6px;
-    min-width: 60px;
-}
-QPushButton:hover {
-    background-color: #444;
-    border-color: #3a86ff;
-}
-QPushButton:pressed {
-    background-color: #222;
-}
-QSpinBox, QDoubleSpinBox {
-    background-color: #2d2d2d;
-    border: 1px solid #555;
-    border-radius: 4px;
-    padding: 4px;
-    color: white;
-}
-QSlider::groove:horizontal {
-    border: 1px solid #555;
-    height: 6px;
-    background: #2d2d2d;
-    margin: 2px 0;
-    border-radius: 3px;
-}
-QSlider::handle:horizontal {
-    background: #3a86ff;
-    border: 1px solid #3a86ff;
-    width: 14px;
-    height: 14px;
-    margin: -5px 0;
-    border-radius: 7px;
-}
-QSlider::handle:horizontal:hover {
-    background: #66a3ff;
-}
-QListWidget {
-    background-color: #252526;
-    border-right: 1px solid #333;
-    outline: none;
-}
-QListWidget::item {
-    padding: 10px;
-    border-bottom: 1px solid #2d2d2d;
-}
-QListWidget::item:selected {
-    background-color: #37373d;
-    color: #ffffff;
-    border-left: 3px solid #3a86ff;
-}
-"""
 
 def load_settings():
     defaults = {
@@ -116,22 +47,93 @@ def save_settings(settings):
             json.dump(settings, f, indent=4)
     except Exception: pass
 
-def get_words_and_chapters(epub_path):
-    words_list = []
-    chapters = [] 
-    current_word_count = 0
+class BookLoader(QThread):
+    progress_updated = pyqtSignal(int)
+    finished_loading = pyqtSignal(list, list)
+    error_occurred = pyqtSignal(str)
 
-    try:
-        with zipfile.ZipFile(epub_path, 'r') as z:
+    def __init__(self, file_path):
+        super().__init__()
+        self.file_path = file_path
+
+    def run(self):
+        try:
+            words = []
+            chapters = []
+
+            if self.file_path.lower().endswith('.pdf'):
+                words, chapters = self._load_pdf()
+            elif self.file_path.lower().endswith('.epub'):
+                words, chapters = self._load_epub()
+            else:
+                raise ValueError("Unsupported file format")
+
+            if self.isInterruptionRequested():
+                return
+
+            self.finished_loading.emit(words, chapters)
+
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
+    def _load_pdf(self):
+        words_list = []
+        chapters = []
+        current_word_count = 0
+        
+        reader = pypdf.PdfReader(self.file_path)
+        total_pages = len(reader.pages)
+        page_map = {} 
+
+        # 1. Extract Text
+        for i, page in enumerate(reader.pages):
+            if self.isInterruptionRequested(): return [], []
+            self.progress_updated.emit(int((i / total_pages) * 100))
+            
+            page_map[i] = current_word_count
+            text = page.extract_text()
+            if text:
+                page_words = text.split()
+                words_list.extend(page_words)
+                current_word_count += len(page_words)
+
+        # 2. Extract Outline (Recursive)
+        def parse_outline(outline_items):
+            for item in outline_items:
+                if isinstance(item, list):
+                    parse_outline(item)
+                else:
+                    try:
+                        title = item.title
+                        page_num = reader.get_destination_page_number(item)
+                        if page_num in page_map:
+                            chapters.append((title, page_map[page_num]))
+                    except Exception: pass
+
+        if reader.outline:
+            parse_outline(reader.outline)
+
+        # 3. Fallback to Pages
+        if not chapters:
+            for i in range(total_pages):
+                if i in page_map:
+                    chapters.append((f"Page {i+1}", page_map[i]))
+        
+        words_list = self._process_headers(words_list)
+        return words_list, chapters
+        
+
+    def _load_epub(self):
+        words_list = []
+        chapters = []
+        current_word_count = 0
+
+        with zipfile.ZipFile(self.file_path, 'r') as z:
+            # Locate Root File
             container_xml = z.read('META-INF/container.xml')
             container_root = ET.fromstring(container_xml)
-            rootfile_path = None
-            for node in container_root.iter():
-                if 'full-path' in node.attrib:
-                    rootfile_path = node.attrib['full-path']
-                    break
-            if not rootfile_path: return [], []
-
+            rootfile_path = next(node.attrib['full-path'] for node in container_root.iter() if 'full-path' in node.attrib)
+            
             opf_data = z.read(rootfile_path)
             opf_root = ET.fromstring(opf_data)
             opf_dir = os.path.dirname(rootfile_path)
@@ -139,15 +141,14 @@ def get_words_and_chapters(epub_path):
             manifest = {item.attrib['id']: item.attrib['href'] 
                         for item in opf_root.findall(".//{*}manifest/{*}item")}
             
+            # Extract TOC Titles
             toc_titles = {}
             try:
                 spine_node = opf_root.find(".//{*}spine")
                 toc_id = spine_node.attrib.get('toc')
                 if toc_id and toc_id in manifest:
-                    toc_rel_path = manifest[toc_id]
-                    toc_full_path = os.path.join(opf_dir, toc_rel_path).replace('\\', '/')
-                    toc_data = z.read(toc_full_path)
-                    toc_root = ET.fromstring(toc_data)
+                    toc_full_path = os.path.join(opf_dir, manifest[toc_id]).replace('\\', '/')
+                    toc_root = ET.fromstring(z.read(toc_full_path))
                     for nav in toc_root.findall(".//{*}navPoint"):
                         label = nav.find(".//{*}navLabel/{*}text")
                         content = nav.find(".//{*}content")
@@ -156,16 +157,22 @@ def get_words_and_chapters(epub_path):
                             toc_titles[src] = label.text.strip()
             except: pass
 
+            # Process Spine
             spine_ids = [item.attrib['idref'] for item in opf_root.findall(".//{*}spine/{*}itemref")]
-            
-            for item_id in spine_ids:
+            total_items = len(spine_ids)
+
+            for i, item_id in enumerate(spine_ids):
+                if self.isInterruptionRequested(): return [], []
+                self.progress_updated.emit(int((i / total_items) * 100))
+
                 if item_id in manifest:
                     rel_path = manifest[item_id]
-                    full_item_path = os.path.join(opf_dir, rel_path).replace('\\', '/')
+                    full_path = os.path.join(opf_dir, rel_path).replace('\\', '/')
                     try:
-                        content = z.read(full_item_path)
-                        soup = BeautifulSoup(content, 'html.parser')
+                        soup = BeautifulSoup(z.read(full_path), 'html.parser')
                         title = toc_titles.get(rel_path)
+                        
+                        # Fallback Title Logic
                         if not title and soup.title: title = soup.title.string.strip()
                         if not title:
                             h = soup.find(['h1', 'h2', 'h3'])
@@ -176,100 +183,40 @@ def get_words_and_chapters(epub_path):
                         words_list.extend(soup.get_text(separator=' ').split())
                         current_word_count += len(words_list) - chapters[-1][1]
                     except KeyError: continue
-    except Exception as e:
-        print(f"Error: {e}")
-        return [], []
-    return words_list, chapters
-
-class RSVPWidget(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.text = "Ready"
-        self.font = QFont("Consolas", 48, QFont.Weight.Bold)
-        self.metrics = QFontMetrics(self.font)
-        self.setMinimumHeight(150)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-
-    def set_word(self, word):
-        self.text = word
-        self.update() 
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setFont(self.font)
-
-        length = len(self.text)
-        if length <= 1: orp = 0
-        elif length <= 5: orp = 1
-        elif length <= 9: orp = 2
-        elif length <= 13: orp = 3
-        else: orp = 4
-        if orp >= length: orp = 0
-
-        left_part = self.text[:orp]
-        pivot_char = self.text[orp]
-        right_part = self.text[orp+1:]
-
-        cx = self.width() // 2
-        cy = (self.height() + self.metrics.ascent() - self.metrics.descent()) // 2
         
-        pivot_width = self.metrics.horizontalAdvance(pivot_char)
-        pivot_x = cx - (pivot_width // 2)
-
-        painter.setPen(QPen(QColor("#444"), 2))
-        painter.drawLine(cx, cy - 60, cx, cy - 75)
-        painter.drawLine(cx, cy + 20, cx, cy + 35)
-
-        painter.setPen(QColor("#ff5555"))
-        painter.drawText(pivot_x, cy, pivot_char)
-
-        painter.setPen(QColor("#ffffff"))
-        left_width = self.metrics.horizontalAdvance(left_part)
-        painter.drawText(pivot_x - left_width, cy, left_part)
-        painter.drawText(pivot_x + pivot_width, cy, right_part)
-
-class PauseSettingsDialog(QDialog):
-    def __init__(self, settings, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Pause Settings")
-        self.settings = settings
-        self.layout = QVBoxLayout()
-
-        form = QFormLayout()
-        self.spin_period = self.create_spin(settings.get("period_delay", 2.0))
-        form.addRow("End of Sentence (. ? !):", self.spin_period)
-
-        self.spin_comma = self.create_spin(settings.get("comma_delay", 1.5))
-        form.addRow("Comma (, : ;):", self.spin_comma)
-
-        self.spin_hyphen = self.create_spin(settings.get("hyphen_delay", 1.2))
-        form.addRow("Hyphen/Dash (-):", self.spin_hyphen)
-
-        self.layout.addLayout(form)
-
-        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        btns.accepted.connect(self.accept)
-        btns.rejected.connect(self.reject)
-        self.layout.addWidget(btns)
+        words_list = self._process_headers(words_list)
+        return words_list, chapters
+    
+    def _process_headers(self, words):
+        processed = []
+        stack = []
         
-        self.setLayout(self.layout)
-
-    def create_spin(self, val):
-        from PyQt6.QtWidgets import QDoubleSpinBox
-        dsb = QDoubleSpinBox()
-        dsb.setRange(1.0, 5.0)
-        dsb.setSingleStep(0.1)
-        dsb.setValue(val)
-        return dsb
-
-    def get_values(self):
-        return {
-            "period_delay": self.spin_period.value(),
-            "comma_delay": self.spin_comma.value(),
-            "hyphen_delay": self.spin_hyphen.value()
-        }
-
+        for word in words:
+            # Check if word is ALL CAPS and no quotes
+            is_caps = word.isupper() and any(c.isalpha() for c in word)
+            has_quote = '"' in word or "'" in word
+            
+            if is_caps and not has_quote:
+                stack.append(word)
+            else:
+                # Flush existing stack if we hit a non-header word
+                if stack:
+                    if len(stack) <= 10:
+                        processed.append(" ".join(stack))
+                    else:
+                        processed.extend(stack)
+                    stack = []
+                processed.append(word)
+        
+        # Flush remaining stack at the end
+        if stack:
+            if len(stack) <= 10:
+                processed.append(" ".join(stack))
+            else:
+                processed.extend(stack)
+                
+        return processed
+    
 class WordDisplay(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -288,7 +235,8 @@ class WordDisplay(QMainWindow):
         self.delays = {
             "period": self.settings.get("period_delay", 2.0),
             "comma": self.settings.get("comma_delay", 1.5),
-            "hyphen": self.settings.get("hyphen_delay", 1.2)
+            "hyphen": self.settings.get("hyphen_delay", 1.2),
+            "header": self.settings.get("header_delay", 10.0)
         }
 
         self.central_widget = QWidget()
@@ -315,6 +263,22 @@ class WordDisplay(QMainWindow):
         self.content_widget = QWidget()
         self.content_layout = QVBoxLayout()
         
+        # --- Loading Bar Container (Hidden by default) ---
+        self.loading_container = QWidget()
+        self.loading_layout = QHBoxLayout()
+        self.loading_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.loading_label = QLabel("Parsing Book...")
+        self.loading_bar = QProgressBar()
+        self.loading_bar.setTextVisible(True)
+        
+        self.loading_layout.addWidget(self.loading_label)
+        self.loading_layout.addWidget(self.loading_bar)
+        
+        self.loading_container.setLayout(self.loading_layout)
+        self.loading_container.setVisible(False) # Hide initially
+        self.content_layout.addWidget(self.loading_container)
+        
         top = QHBoxLayout()
         btn_open = QPushButton("Open Book")
         btn_open.setFixedSize(100, 30)
@@ -337,14 +301,9 @@ class WordDisplay(QMainWindow):
         self.display_container = QWidget()
         self.display_layout = QVBoxLayout()
         
-        # 1. Context Label (Top)
-        self.context_label = QLabel()
-        self.context_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.context_label.setWordWrap(True)
-        self.context_label.setTextFormat(Qt.TextFormat.RichText)
-        # We only set font size here; color is handled in update_context_view to support opacity
-        self.context_label.setStyleSheet(f"font-size: 20px; font-family: 'Georgia';")
-        self.display_layout.addWidget(self.context_label, stretch=1)
+        # 1. Context Widget (Custom Flow)
+        self.context_display = ContextFlowWidget()
+        self.display_layout.addWidget(self.context_display, stretch=1)
 
         # 2. RSVP Widget (Bottom)
         self.rsvp_display = RSVPWidget()
@@ -429,16 +388,44 @@ class WordDisplay(QMainWindow):
         if self.is_running:
             self.toggle_reading()
 
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open EPUB", "", "EPUB Files (*.epub)")
+        # Updated filter to include PDF
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, 
+            "Open Book", 
+            "", 
+            "Books (*.epub *.pdf);;EPUB Files (*.epub);;PDF Files (*.pdf)"
+        )
         if file_path:
             self.load_book(os.path.abspath(file_path))
 
     def load_book(self, file_path):
         print(f"Loading: {file_path}")
-        words, chapters = get_words_and_chapters(file_path)
         
+        # 1. UI State: Show loading, disable interactions
+        self.loading_bar.setValue(0)
+        self.loading_label.setText(f"Loading {os.path.basename(file_path)}...")
+        self.loading_container.setVisible(True)
+        self.central_widget.setEnabled(False)
+
+        # 2. Setup Thread
+        self.loader_thread = BookLoader(file_path)
+        self.loader_thread.progress_updated.connect(self.loading_bar.setValue)
+        self.loader_thread.finished_loading.connect(lambda w, c: self.on_book_loaded(w, c, file_path))
+        
+        self.loader_thread.error_occurred.connect(lambda e: QMessageBox.critical(self, "Error", f"Failed: {e}"))
+        
+        self.loader_thread.finished.connect(self.reset_loading_ui)
+        
+        self.loader_thread.start()
+
+    def reset_loading_ui(self):
+        self.loading_container.setVisible(False)
+        self.central_widget.setEnabled(True)
+        self.setFocus()
+
+    def on_book_loaded(self, words, chapters, file_path):
         if not words:
-            QMessageBox.critical(self, "Error", "Failed to load book or book is empty.")
+            QMessageBox.critical(self, "Error", "Book is empty or could not be parsed.")
             return
 
         self.words = words
@@ -459,7 +446,6 @@ class WordDisplay(QMainWindow):
 
         self.update_display_manual()
         self.highlight_current_chapter()
-        self.setFocus()
 
     def open_pause_settings(self):
         was_running = self.is_running
@@ -472,7 +458,8 @@ class WordDisplay(QMainWindow):
             self.delays = {
                 "period": vals["period_delay"],
                 "comma": vals["comma_delay"],
-                "hyphen": vals["hyphen_delay"]
+                "hyphen": vals["hyphen_delay"],
+                "header": vals["header_delay"] # <--- ADD THIS
             }
             save_settings(self.settings)
         self.setFocus()
@@ -519,36 +506,17 @@ class WordDisplay(QMainWindow):
     def update_context_view(self):
         if not self.words: return
         
-        start = max(0, self.index - self.ctx_range)
-        end = min(len(self.words), self.index + self.ctx_range)
-        
         s_start, s_end = self.find_sentence_bounds()
         
-        # Calculate standard text color with opacity
-        alpha = self.opacity / 100.0
-        standard_color = f"rgba(255, 255, 255, {alpha})"
-        
-        html_output = []
-        for i in range(start, end):
-            word_text = html.escape(self.words[i])
-            
-            bg_color = "transparent"
-            fg_color = standard_color # White with opacity
-            
-            # Sentence Highlighting
-            if s_start <= i <= s_end:
-                bg_color = "rgba(255, 255, 255, 0.1)"
-            
-            # Active Word Highlighting
-            if i == self.index:
-                bg_color = "#ffd700"
-                fg_color = "#000000" # Black text on active
-            
-            html_output.append(
-                f"<span style='background-color: {bg_color}; color: {fg_color};'>{word_text}</span>"
-            )
-        
-        self.context_label.setText(" ".join(html_output))
+        # Pass data to the custom widget for painting
+        self.context_display.set_data(
+            self.words,
+            self.index,
+            self.ctx_range,
+            self.opacity,
+            s_start,
+            s_end
+        )
 
     def on_chapter_clicked(self, item):
         self.index = item.data(Qt.ItemDataRole.UserRole)
@@ -645,7 +613,9 @@ class WordDisplay(QMainWindow):
             current_word = self.words[self.index]
             last_char = current_word[-1] if current_word else ""
             
-            if last_char in ['.', '?', '!']:
+            if is_header(current_word):
+                multiplier = self.delays['header']
+            elif last_char in ['.', '?', '!']:
                 multiplier = self.delays['period']
             elif last_char in [',', ':', ';']:
                 multiplier = self.delays['comma']
