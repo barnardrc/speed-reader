@@ -1,3 +1,4 @@
 bs4
 pyqt6
 ebooklib
+pypdf
