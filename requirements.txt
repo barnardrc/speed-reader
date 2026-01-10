@@ -1,4 +1,6 @@
 bs4
 pyqt6
 ebooklib
-pypdf
+requests
+pymupdf
+psutil

@@ -1,222 +1,28 @@
+# speed_reader.py
 import sys
 import os
-import json
-import zipfile
-import html
-import pypdf
-import xml.etree.ElementTree as ET
-from bs4 import BeautifulSoup
-from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
+import bisect
+import socket
+from PyQt6.QtCore import QTimer, Qt, QPoint
 from PyQt6.QtWidgets import (
     QApplication, QLabel, QVBoxLayout, QWidget, 
     QSlider, QHBoxLayout, QProgressBar, QFileDialog,
     QSpinBox, QPushButton, QListWidget, QListWidgetItem,
-    QSizePolicy, QFrame, QMainWindow, QDialog, QFormLayout, 
-    QDialogButtonBox, QMessageBox, QProgressDialog, QTextBrowser
+    QFrame, QMainWindow, QMessageBox
 )
-from PyQt6.QtGui import QPainter, QFont, QFontMetrics, QColor, QPen, QTextCursor
+
+# Utils
 from utils.style_sheet import DARK_THEME
-from ui.dialogs import PauseSettingsDialog
-from ui.widgets import RSVPWidget, ContextFlowWidget
 from utils.text_utils import is_header
+from utils.ai import SequentialAIWorker, AIQuestionPanel, EntityPanel
+from utils.ai_backend import AIBackendManager
+from utils.settings import load_settings, save_settings, PAUSE_CONFIG
+from utils.book_loader import BookLoader
 
-SETTINGS_FILE = "speed_reader_settings.json"
+# UI Components
+from ui.dialogs import PauseSettingsDialog, AISettingsDialog, FootnoteDialog
+from ui.widgets import RSVPWidget, ContextFlowWidget, QueueMonitorWidget
 
-def load_settings():
-    defaults = {
-        "wpm": 300, 
-        "opacity": 50, # Default higher so text is visible
-        "context_range": 20, 
-        "period_delay": 2.0, 
-        "comma_delay": 1.5, 
-        "hyphen_delay": 1.2,
-        "books": {}
-    }
-    if os.path.exists(SETTINGS_FILE):
-        try:
-            with open(SETTINGS_FILE, 'r') as f:
-                data = json.load(f)
-                defaults.update(data)
-                return defaults
-        except Exception: pass
-    return defaults
-
-def save_settings(settings):
-    try:
-        with open(SETTINGS_FILE, 'w') as f:
-            json.dump(settings, f, indent=4)
-    except Exception: pass
-
-class BookLoader(QThread):
-    progress_updated = pyqtSignal(int)
-    finished_loading = pyqtSignal(list, list)
-    error_occurred = pyqtSignal(str)
-
-    def __init__(self, file_path):
-        super().__init__()
-        self.file_path = file_path
-
-    def run(self):
-        try:
-            words = []
-            chapters = []
-
-            if self.file_path.lower().endswith('.pdf'):
-                words, chapters = self._load_pdf()
-            elif self.file_path.lower().endswith('.epub'):
-                words, chapters = self._load_epub()
-            else:
-                raise ValueError("Unsupported file format")
-
-            if self.isInterruptionRequested():
-                return
-
-            self.finished_loading.emit(words, chapters)
-
-        except Exception as e:
-            self.error_occurred.emit(str(e))
-
-    def _load_pdf(self):
-        words_list = []
-        chapters = []
-        current_word_count = 0
-        
-        reader = pypdf.PdfReader(self.file_path)
-        total_pages = len(reader.pages)
-        page_map = {} 
-
-        # 1. Extract Text
-        for i, page in enumerate(reader.pages):
-            if self.isInterruptionRequested(): return [], []
-            self.progress_updated.emit(int((i / total_pages) * 100))
-            
-            page_map[i] = current_word_count
-            text = page.extract_text()
-            if text:
-                page_words = text.split()
-                words_list.extend(page_words)
-                current_word_count += len(page_words)
-
-        # 2. Extract Outline (Recursive)
-        def parse_outline(outline_items):
-            for item in outline_items:
-                if isinstance(item, list):
-                    parse_outline(item)
-                else:
-                    try:
-                        title = item.title
-                        page_num = reader.get_destination_page_number(item)
-                        if page_num in page_map:
-                            chapters.append((title, page_map[page_num]))
-                    except Exception: pass
-
-        if reader.outline:
-            parse_outline(reader.outline)
-
-        # 3. Fallback to Pages
-        if not chapters:
-            for i in range(total_pages):
-                if i in page_map:
-                    chapters.append((f"Page {i+1}", page_map[i]))
-        
-        words_list = self._process_headers(words_list)
-        return words_list, chapters
-        
-
-    def _load_epub(self):
-        words_list = []
-        chapters = []
-        current_word_count = 0
-
-        with zipfile.ZipFile(self.file_path, 'r') as z:
-            # Locate Root File
-            container_xml = z.read('META-INF/container.xml')
-            container_root = ET.fromstring(container_xml)
-            rootfile_path = next(node.attrib['full-path'] for node in container_root.iter() if 'full-path' in node.attrib)
-            
-            opf_data = z.read(rootfile_path)
-            opf_root = ET.fromstring(opf_data)
-            opf_dir = os.path.dirname(rootfile_path)
-            
-            manifest = {item.attrib['id']: item.attrib['href'] 
-                        for item in opf_root.findall(".//{*}manifest/{*}item")}
-            
-            # Extract TOC Titles
-            toc_titles = {}
-            try:
-                spine_node = opf_root.find(".//{*}spine")
-                toc_id = spine_node.attrib.get('toc')
-                if toc_id and toc_id in manifest:
-                    toc_full_path = os.path.join(opf_dir, manifest[toc_id]).replace('\\', '/')
-                    toc_root = ET.fromstring(z.read(toc_full_path))
-                    for nav in toc_root.findall(".//{*}navPoint"):
-                        label = nav.find(".//{*}navLabel/{*}text")
-                        content = nav.find(".//{*}content")
-                        if label is not None and content is not None:
-                            src = content.attrib.get('src', '').split('#')[0]
-                            toc_titles[src] = label.text.strip()
-            except: pass
-
-            # Process Spine
-            spine_ids = [item.attrib['idref'] for item in opf_root.findall(".//{*}spine/{*}itemref")]
-            total_items = len(spine_ids)
-
-            for i, item_id in enumerate(spine_ids):
-                if self.isInterruptionRequested(): return [], []
-                self.progress_updated.emit(int((i / total_items) * 100))
-
-                if item_id in manifest:
-                    rel_path = manifest[item_id]
-                    full_path = os.path.join(opf_dir, rel_path).replace('\\', '/')
-                    try:
-                        soup = BeautifulSoup(z.read(full_path), 'html.parser')
-                        title = toc_titles.get(rel_path)
-                        
-                        # Fallback Title Logic
-                        if not title and soup.title: title = soup.title.string.strip()
-                        if not title:
-                            h = soup.find(['h1', 'h2', 'h3'])
-                            if h: title = h.get_text().strip()[:40]
-                        if not title: title = f"Section {len(chapters)+1}"
-
-                        chapters.append((title, current_word_count))
-                        words_list.extend(soup.get_text(separator=' ').split())
-                        current_word_count += len(words_list) - chapters[-1][1]
-                    except KeyError: continue
-        
-        words_list = self._process_headers(words_list)
-        return words_list, chapters
-    
-    def _process_headers(self, words):
-        processed = []
-        stack = []
-        
-        for word in words:
-            # Check if word is ALL CAPS and no quotes
-            is_caps = word.isupper() and any(c.isalpha() for c in word)
-            has_quote = '"' in word or "'" in word
-            
-            if is_caps and not has_quote:
-                stack.append(word)
-            else:
-                # Flush existing stack if we hit a non-header word
-                if stack:
-                    if len(stack) <= 10:
-                        processed.append(" ".join(stack))
-                    else:
-                        processed.extend(stack)
-                    stack = []
-                processed.append(word)
-        
-        # Flush remaining stack at the end
-        if stack:
-            if len(stack) <= 10:
-                processed.append(" ".join(stack))
-            else:
-                processed.extend(stack)
-                
-        return processed
-    
 class WordDisplay(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -225,19 +31,43 @@ class WordDisplay(QMainWindow):
         self.file_path = ""
         self.is_running = False
         self.index = 0
-        
+        self.read_buffer = [] 
+        self.entity_buffer = [] 
+        self.footnotes = {}
+
         self.setStyleSheet(DARK_THEME)
         self.settings = load_settings()
+        
+        # AI Backend
+        self.ai_backend = AIBackendManager(self.settings)
+        
+        # Check Connection
+        self.ai_enabled = self.settings.get("ai_enabled", False)
+        self.ai_frequency = self.settings.get("ai_frequency", 500) 
+        
+        self.entity_enabled = self.settings.get("entity_enabled", True)
+        self.entity_frequency = self.settings.get("entity_frequency", 300)
+        
+        # Perform the check
+        is_connected, status_msg = self.ai_backend.check_status()
+        
+        if (self.ai_enabled or self.entity_enabled) and not is_connected:
+            QMessageBox.warning(
+                None, 
+                "AI Unavailable", 
+                f"{status_msg}\n\nAI features will be disabled for this session."
+            )
+            self.ai_enabled = False
+            self.entity_enabled = False
+            
         self.wpm = self.settings.get("wpm", 300)
         self.opacity = self.settings.get("opacity", 50)
         self.ctx_range = self.settings.get("context_range", 20)
-        
-        self.delays = {
-            "period": self.settings.get("period_delay", 2.0),
-            "comma": self.settings.get("comma_delay", 1.5),
-            "hyphen": self.settings.get("hyphen_delay", 1.2),
-            "header": self.settings.get("header_delay", 10.0)
-        }
+        self.flank_opacity = self.settings.get("flank_opacity", 60)
+
+        self.delays = {}
+        for key in PAUSE_CONFIG: 
+            self.delays[key] = self.settings.get(f"{key}_delay", PAUSE_CONFIG[key][0])
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -245,12 +75,11 @@ class WordDisplay(QMainWindow):
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.central_widget.setLayout(self.main_layout)
 
-        # Sidebar
+        # --- Sidebar ---
         self.sidebar = QWidget()
         self.sidebar.setFixedWidth(200)
         self.sidebar_layout = QVBoxLayout()
         self.sidebar_layout.addWidget(QLabel("  Chapters"))
-        
         self.chapter_list = QListWidget()
         self.chapter_list.setFrameShape(QFrame.Shape.NoFrame)
         self.chapter_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -259,163 +88,289 @@ class WordDisplay(QMainWindow):
         self.sidebar.setLayout(self.sidebar_layout)
         self.main_layout.addWidget(self.sidebar)
 
-        # Content
+        # --- Content Area ---
         self.content_widget = QWidget()
         self.content_layout = QVBoxLayout()
         
-        # --- Loading Bar Container (Hidden by default) ---
         self.loading_container = QWidget()
         self.loading_layout = QHBoxLayout()
         self.loading_layout.setContentsMargins(0, 0, 0, 0)
-        
         self.loading_label = QLabel("Parsing Book...")
         self.loading_bar = QProgressBar()
         self.loading_bar.setTextVisible(True)
-        
         self.loading_layout.addWidget(self.loading_label)
         self.loading_layout.addWidget(self.loading_bar)
-        
         self.loading_container.setLayout(self.loading_layout)
-        self.loading_container.setVisible(False) # Hide initially
+        self.loading_container.setVisible(False)
         self.content_layout.addWidget(self.loading_container)
         
+        # --- Top Bar ---
         top = QHBoxLayout()
         btn_open = QPushButton("Open Book")
         btn_open.setFixedSize(100, 30)
         btn_open.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         btn_open.clicked.connect(self.open_file_dialog)
         top.addWidget(btn_open)
-
+        
         btn_menu = QPushButton("☰ List")
         btn_menu.setFixedSize(80, 30)
         btn_menu.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        btn_menu.clicked.connect(lambda: self.sidebar.setVisible(not self.sidebar.isVisible()))
+        btn_menu.clicked.connect(self.toggle_sidebar)
         top.addWidget(btn_menu)
         
         top.addStretch()
-        self.content_layout.addLayout(top)
         
+        # Queue Monitor (Right-aligned in Top Bar)
+        self.queue_monitor = QueueMonitorWidget()
+        top.addWidget(self.queue_monitor)
+        
+        self.content_layout.addLayout(top)
         self.content_layout.addStretch()
         
-        # Display Container
+        # --- RSVP Display ---
         self.display_container = QWidget()
         self.display_layout = QVBoxLayout()
-        
-        # 1. Context Widget (Custom Flow)
         self.context_display = ContextFlowWidget()
+        self.context_display.scrolled.connect(self.on_context_scroll)
         self.display_layout.addWidget(self.context_display, stretch=1)
-
-        # 2. RSVP Widget (Bottom)
         self.rsvp_display = RSVPWidget()
+        self.rsvp_display.set_flank_opacity(self.flank_opacity)
         self.display_layout.addWidget(self.rsvp_display, stretch=1)
-        
         self.display_container.setLayout(self.display_layout)
         self.content_layout.addWidget(self.display_container, stretch=2) 
-
         self.content_layout.addStretch()
+
+        self.h_line = QFrame()
+        self.h_line.setFrameShape(QFrame.Shape.HLine)
+        self.h_line.setFrameShadow(QFrame.Shadow.Sunken)
+        self.h_line.setStyleSheet("background-color: #555;")
+        self.content_layout.addWidget(self.h_line)
 
         self.progress_bar = QProgressBar()
         self.content_layout.addWidget(self.progress_bar)
 
+        # --- Navigation Bar ---
         nav = QHBoxLayout()
+        
+        # Page tracker
+        nav.addWidget(QLabel("Page:"))
+        self.page_spin = QSpinBox()
+        self.page_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
+        self.page_spin.setRange(1, 1)
+        self.page_spin.setFixedWidth(60)
+        self.page_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.page_spin.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.page_spin.editingFinished.connect(self.jump_to_page_input) 
+        nav.addWidget(self.page_spin)
+
+        self.lbl_total_pages = QLabel("/ --")
+        nav.addWidget(self.lbl_total_pages)
+        
+        nav.addSpacing(20)
+        
         nav.addWidget(QLabel("Jump %:"))
         self.pct_spin = QSpinBox()
         self.pct_spin.setRange(0, 100)
         self.pct_spin.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
-        
         self.pct_btn = QPushButton("Go")
         self.pct_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.pct_btn.clicked.connect(self.jump_to_percentage)
         nav.addWidget(self.pct_spin)
         nav.addWidget(self.pct_btn)
+        
         nav.addStretch()
+        
+        # Footnotes Button
+        self.btn_footnote = QPushButton("Footnotes")
+        self.btn_footnote.setCheckable(True)
+        self.btn_footnote.setFixedWidth(80)
+        self.btn_footnote.setStyleSheet("""
+            QPushButton { color: #555; border: 1px solid #444; border-radius: 3px; }
+            QPushButton:checked { background-color: #4a90e2; color: white; border-color: #4a90e2; }
+            QPushButton:disabled { background-color: transparent; border-color: #333; color: #333; }
+        """)
+        self.btn_footnote.clicked.connect(self.toggle_footnote_view)
+        self.btn_footnote.setEnabled(False)
+        nav.addWidget(self.btn_footnote)
+        
         self.content_layout.addLayout(nav)
 
+        # --- Controls Bar ---
         controls = QHBoxLayout()
         controls.addWidget(QLabel("Speed:"))
         self.wpm_label = QLabel(f"{self.wpm}")
-        controls.addWidget(self.wpm_label)
+        self.wpm_spin = QSpinBox()
+        self.wpm_spin.setRange(60, 1000)
+        self.wpm_spin.setValue(self.wpm)
+        self.wpm_spin.setFixedWidth(60)
+        self.wpm_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
+        self.wpm_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.wpm_spin.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.wpm_spin.valueChanged.connect(self.update_speed_from_spinbox)
+        controls.addWidget(self.wpm_spin)
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(60, 1000)
         self.slider.setValue(self.wpm)
-        self.slider.setFixedWidth(150)
+        self.slider.setFixedWidth(120)
         self.slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.slider.valueChanged.connect(self.update_speed_from_slider)
         controls.addWidget(self.slider)
-
         controls.addSpacing(10)
-        controls.addWidget(QLabel("Op:"))
+        controls.addWidget(QLabel("Ctx:"))
         self.op_slider = QSlider(Qt.Orientation.Horizontal)
         self.op_slider.setRange(0, 100)
         self.op_slider.setValue(self.opacity)
-        self.op_slider.setFixedWidth(80)
+        self.op_slider.setFixedWidth(60)
         self.op_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.op_slider.valueChanged.connect(self.update_opacity)
         controls.addWidget(self.op_slider)
-
         controls.addSpacing(10)
-        controls.addWidget(QLabel("Ctx Range:"))
+        controls.addWidget(QLabel("Flank:"))
+        self.flank_slider = QSlider(Qt.Orientation.Horizontal)
+        self.flank_slider.setRange(0, 255)
+        self.flank_slider.setValue(self.flank_opacity)
+        self.flank_slider.setFixedWidth(60)
+        self.flank_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.flank_slider.valueChanged.connect(self.update_flank_opacity)
+        controls.addWidget(self.flank_slider)
+        controls.addSpacing(10)
+        controls.addWidget(QLabel("Range:"))
         self.ctx_slider = QSlider(Qt.Orientation.Horizontal)
         self.ctx_slider.setRange(5, 100)
         self.ctx_slider.setValue(self.ctx_range)
-        self.ctx_slider.setFixedWidth(80)
+        self.ctx_slider.setFixedWidth(60)
         self.ctx_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.ctx_slider.valueChanged.connect(self.update_ctx_range)
         controls.addWidget(self.ctx_slider)
-
+        
         controls.addSpacing(10)
+        
         self.btn_pauses = QPushButton("Pauses")
         self.btn_pauses.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_pauses.clicked.connect(self.open_pause_settings)
         controls.addWidget(self.btn_pauses)
+
+        self.btn_ai_settings = QPushButton("AI Settings")
+        self.btn_ai_settings.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_ai_settings.clicked.connect(self.open_ai_settings)
+        controls.addWidget(self.btn_ai_settings)
+
         controls.addStretch()
         self.content_layout.addLayout(controls)
-
+        
         self.content_widget.setLayout(self.content_layout)
         self.main_layout.addWidget(self.content_widget)
-
-        self.resize(1000, 700)
+        
+        # --- AI & Workers ---
+        self.ai_worker = SequentialAIWorker(self.ai_backend)
+        self.ai_worker.result_ready.connect(self.route_ai_response) 
+        self.ai_worker.error_occurred.connect(lambda e: print(f"AI Error: {e}"))
+        
+        # Queue Monitor connections
+        self.ai_worker.queue_updated.connect(self.queue_monitor.update_queue_list)
+        self.ai_worker.processing_started.connect(self.queue_monitor.set_processing)
+        self.ai_worker.processing_finished.connect(self.queue_monitor.set_idle)
+        
+        self.ai_worker.start() 
+        
+        self.ai_panel = AIQuestionPanel(self.central_widget)
+        self.entity_panel = EntityPanel(self.central_widget)
+        
+        if not self.ai_enabled: self.ai_panel.hide()
+        if not self.entity_enabled: self.entity_panel.hide()
+        else: self.entity_panel.show()
+        
+        self.ai_panel.submit_task_signal.connect(self.ai_worker.add_task)
+        
+        self.resize(1200, 800)
         self.timer = QTimer()
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.show_next_word)
-        
         self.setFocus()
-
-    def open_file_dialog(self):
-        if self.file_path:
-            self.persist_state()
+    
+    def update_overlay_positions(self):
+        """Recalculates positions for the floating panels based on current layout."""
+        if not hasattr(self, 'h_line'): return
+        
+        # This margin must match the padding in ContextFlowWidget.paintEvent
+        # (border_padding=20) + (line_inset=10) = 30
+        VISUAL_MARGIN = 30
+        
+        # Get line positions relative to the central widget
+        line_pos = self.h_line.mapTo(self.central_widget, QPoint(0,0))
+        global_line_pos = self.h_line.mapToGlobal(QPoint(0,0))
+        
+        # 1. AI Panel (Right Side)
+        if hasattr(self, 'ai_panel'):
+            pw = self.ai_panel.width()
+            # Align right edge of panel with right end of separator line
+            target_x = self.central_widget.width() - pw - VISUAL_MARGIN
+            self.ai_panel.place_panel(target_x, line_pos.y(), global_line_pos.y())
+        
+        # 2. Entity Panel (Left Side)
+        if hasattr(self, 'entity_panel'):
+            # Calculate where the Content Area starts (Sidebar width or 0)
+            content_start_x = self.sidebar.width() if self.sidebar.isVisible() else 0
             
+            # Align left edge of panel with left end of separator line
+            target_x = content_start_x + VISUAL_MARGIN
+            
+            self.entity_panel.place_panel(target_x, line_pos.y())
+    
+    def on_context_scroll(self, step):
         if self.is_running:
             self.toggle_reading()
 
-        # Updated filter to include PDF
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, 
-            "Open Book", 
-            "", 
-            "Books (*.epub *.pdf);;EPUB Files (*.epub);;PDF Files (*.pdf)"
-        )
-        if file_path:
-            self.load_book(os.path.abspath(file_path))
+        new_index = self.index + step
+
+        if 0 <= new_index < len(self.words):
+            self.index = new_index
+            
+            self.update_display_manual()
+    
+    def route_ai_response(self, response, metadata):
+        task_type = metadata.get("type")
+        
+        if task_type == "QUESTION":
+            context_text = metadata.get("context", "")
+            self.ai_panel.add_question(response, context_text)
+            
+        elif task_type == "ENTITY":
+            self.entity_panel.add_entities(response)
+    
+        elif task_type == "CHECK_ANSWER":
+            tab_id = metadata.get("tab_id")
+            # Route specifically to the tab that asked
+            self.ai_panel.deliver_feedback(tab_id, response)
+    
+    def resizeEvent(self, event):
+        self.update_overlay_positions()
+        super().resizeEvent(event)
+    
+    def toggle_sidebar(self):
+        new_state = not self.sidebar.isVisible()
+        self.sidebar.setVisible(new_state)
+        
+        # Wait for the layout to refresh, then move the panels
+        QTimer.singleShot(0, self.update_overlay_positions)
+    
+    def open_file_dialog(self):
+        if self.file_path: self.persist_state()
+        if self.is_running: self.toggle_reading()
+        file_path, _ = QFileDialog.getOpenFileName(self, "Open Book", "", "Books (*.epub *.pdf);;EPUB Files (*.epub);;PDF Files (*.pdf)")
+        if file_path: self.load_book(os.path.abspath(file_path))
 
     def load_book(self, file_path):
         print(f"Loading: {file_path}")
-        
-        # 1. UI State: Show loading, disable interactions
         self.loading_bar.setValue(0)
         self.loading_label.setText(f"Loading {os.path.basename(file_path)}...")
         self.loading_container.setVisible(True)
         self.central_widget.setEnabled(False)
-
-        # 2. Setup Thread
         self.loader_thread = BookLoader(file_path)
         self.loader_thread.progress_updated.connect(self.loading_bar.setValue)
-        self.loader_thread.finished_loading.connect(lambda w, c: self.on_book_loaded(w, c, file_path))
-        
+        self.loader_thread.finished_loading.connect(lambda w, c, p, f: self.on_book_loaded(w, c, p, f, file_path))
         self.loader_thread.error_occurred.connect(lambda e: QMessageBox.critical(self, "Error", f"Failed: {e}"))
-        
         self.loader_thread.finished.connect(self.reset_loading_ui)
-        
         self.loader_thread.start()
 
     def reset_loading_ui(self):
@@ -423,27 +378,47 @@ class WordDisplay(QMainWindow):
         self.central_widget.setEnabled(True)
         self.setFocus()
 
-    def on_book_loaded(self, words, chapters, file_path):
+    def on_book_loaded(self, words, chapters, page_map, footnotes, file_path):
         if not words:
-            QMessageBox.critical(self, "Error", "Book is empty or could not be parsed.")
+            QMessageBox.critical(self, "Error", "Book is empty.")
             return
-
         self.words = words
         self.chapters = chapters
+        self.page_map = page_map
+        self.footnotes = footnotes
         self.file_path = file_path
         
+        # Prepare Page Lookup Data (Sorted keys for binary search)
+        # page_map is { page_num: word_index }
+        if self.page_map:
+            self.page_nums = sorted(self.page_map.keys())
+            self.page_starts = [self.page_map[p] for p in self.page_nums]
+            self.page_spin.setRange(1, self.page_nums[-1])
+            self.lbl_total_pages.setText(f"/ {self.page_nums[-1]}")
+            self.page_spin.setEnabled(True)
+        else:
+            # EPUB or failed mapping
+            self.page_nums = []
+            self.page_starts = []
+            self.page_spin.setRange(0, 0)
+            self.lbl_total_pages.setText("/ --")
+            self.page_spin.setEnabled(False)
+
+        self.read_buffer = [] 
+        self.entity_buffer = []
         saved_index = self.settings.get("books", {}).get(self.file_path, 0)
         self.index = min(saved_index, len(self.words) - 1)
-
+        
+        # Update Lists
         self.chapter_list.clear()
         for title, idx in self.chapters:
             item = QListWidgetItem(title)
             item.setData(Qt.ItemDataRole.UserRole, idx)
             self.chapter_list.addItem(item)
-
+            
         self.progress_bar.setRange(0, len(self.words))
         self.progress_bar.setValue(self.index)
-
+        self.rsvp_display.set_status(False)
         self.update_display_manual()
         self.highlight_current_chapter()
 
@@ -451,17 +426,49 @@ class WordDisplay(QMainWindow):
         was_running = self.is_running
         if was_running: self.toggle_reading()
         
-        dlg = PauseSettingsDialog(self.settings, self)
+        # Pass the imported PAUSE_CONFIG
+        dlg = PauseSettingsDialog(self.settings, PAUSE_CONFIG, self)
+        
         if dlg.exec():
             vals = dlg.get_values()
             self.settings.update(vals)
-            self.delays = {
-                "period": vals["period_delay"],
-                "comma": vals["comma_delay"],
-                "hyphen": vals["hyphen_delay"],
-                "header": vals["header_delay"] # <--- ADD THIS
-            }
+            for key in PAUSE_CONFIG: 
+                self.delays[key] = vals[f"{key}_delay"]
             save_settings(self.settings)
+        
+        self.setFocus()
+        
+    def open_ai_settings(self):
+        # --- Pause if running ---
+        if self.is_running:
+            self.toggle_reading()
+
+        dlg = AISettingsDialog(self.settings, self.ai_backend, self)
+        if dlg.exec():
+            new_vals = dlg.get_values()
+            
+            # Update Local State
+            self.ai_enabled = new_vals["ai_enabled"]
+            self.ai_frequency = new_vals["ai_frequency"]
+            self.entity_enabled = new_vals["entity_enabled"]
+            
+            # Update Backend Model
+            selected_model = new_vals.get("selected_model")
+            if selected_model:
+                self.ai_backend.set_model(selected_model)
+
+            # Toggle Panels
+            if not self.ai_enabled: self.ai_panel.hide()
+            else: self.ai_panel.show()
+            
+            if not self.entity_enabled: self.entity_panel.hide()
+            else: self.entity_panel.show()
+            
+            # Save Settings
+            self.settings.update(new_vals)
+            self.settings["ai_model"] = selected_model
+            save_settings(self.settings)
+            
         self.setFocus()
 
     def update_opacity(self):
@@ -469,15 +476,34 @@ class WordDisplay(QMainWindow):
         self.update_context_view()
         self.setFocus()
 
+    def update_flank_opacity(self):
+        self.flank_opacity = self.flank_slider.value()
+        self.rsvp_display.set_flank_opacity(self.flank_opacity)
+        self.setFocus()
+
     def update_ctx_range(self):
         self.ctx_range = self.ctx_slider.value()
         self.update_context_view()
         self.setFocus()
+        
+    def update_ai_config(self):
+        self.ai_enabled = self.settings.get("ai_enabled", False)
+        self.ai_frequency = self.settings.get("ai_frequency", 500)
+        self.entity_enabled = self.settings.get("entity_enabled", True)
+        
+        if not self.ai_enabled:
+            self.read_buffer = []
+            self.ai_panel.hide()
+        
+        if not self.entity_enabled:
+            self.entity_buffer = []
+            self.entity_panel.hide()
+        else:
+            self.entity_panel.show()
 
     def find_sentence_bounds(self):
         s_start = self.index
         limit = 100 
-        
         i = self.index - 1
         count = 0
         while i >= 0 and count < limit:
@@ -485,11 +511,9 @@ class WordDisplay(QMainWindow):
             if w and w[-1] in ['.', '?', '!']:
                 s_start = i + 1
                 break
-            if i == 0:
-                s_start = 0
+            if i == 0: s_start = 0
             i -= 1
             count += 1
-            
         s_end = self.index
         i = self.index
         count = 0
@@ -500,62 +524,67 @@ class WordDisplay(QMainWindow):
                 break
             i += 1
             count += 1
-        
         return s_start, s_end
 
     def update_context_view(self):
         if not self.words: return
-        
         s_start, s_end = self.find_sentence_bounds()
-        
-        # Pass data to the custom widget for painting
         self.context_display.set_data(
-            self.words,
-            self.index,
-            self.ctx_range,
-            self.opacity,
-            s_start,
-            s_end
+            self.words, self.index, self.ctx_range, self.opacity, s_start, s_end
         )
 
     def on_chapter_clicked(self, item):
         self.index = item.data(Qt.ItemDataRole.UserRole)
+        self.read_buffer = [] 
+        self.entity_buffer = []
         self.update_display_manual()
         if self.is_running: self.schedule_next_word()
         self.setFocus()
 
     def keyPressEvent(self, e):
         if not self.words: return
-        if e.key() == Qt.Key.Key_Space:
-            self.toggle_reading()
-        elif e.key() == Qt.Key.Key_Left:
-            self.skip_words(-10)
-        elif e.key() == Qt.Key.Key_Right:
-            self.skip_words(10)
-        elif e.key() == Qt.Key.Key_Up:
-            self.change_speed(25)
-        elif e.key() == Qt.Key.Key_Down:
-            self.change_speed(-25)
-        else:
-            super().keyPressEvent(e)
+        if e.key() == Qt.Key.Key_Space: self.toggle_reading()
+        elif e.key() == Qt.Key.Key_Left: self.skip_words(-10)
+        elif e.key() == Qt.Key.Key_Right: self.skip_words(10)
+        elif e.key() == Qt.Key.Key_Up: self.change_speed(25)
+        elif e.key() == Qt.Key.Key_Down: self.change_speed(-25)
+        else: super().keyPressEvent(e)
 
     def skip_words(self, count):
         self.index = max(0, min(len(self.words) - 1, self.index + count))
+        self.read_buffer = [] 
+        self.entity_buffer = []
         self.update_display_manual()
         self.highlight_current_chapter()
 
     def change_speed(self, delta):
+        """Called by Up/Down Arrow Keys"""
         new_wpm = self.wpm + delta
         new_wpm = max(self.slider.minimum(), min(self.slider.maximum(), new_wpm))
-        self.slider.setValue(new_wpm) 
+        self.slider.setValue(new_wpm)
 
     def mousePressEvent(self, e):
-        if self.childAt(e.pos()) not in [self.slider, self.op_slider, self.ctx_slider, self.pct_btn, self.pct_spin, self.btn_pauses]:
+        ignore_widgets = [
+            self.slider, self.op_slider, self.flank_slider, self.ctx_slider, 
+            self.pct_btn, self.pct_spin, self.btn_pauses, self.btn_ai_settings,
+            self.wpm_spin
+        ]
+        
+        click_pos = self.mapFromGlobal(e.globalPosition().toPoint())
+        if self.ai_panel.isVisible() and self.ai_panel.geometry().contains(click_pos): pass 
+        elif self.entity_panel.isVisible() and self.entity_panel.geometry().contains(click_pos): pass
+        elif self.childAt(e.pos()) not in ignore_widgets:
             self.setFocus()
             self.toggle_reading()
 
     def closeEvent(self, e):
         self.persist_state()
+        
+        # Gracefully stop the infinite loop
+        if hasattr(self, 'ai_worker'):
+            self.ai_worker.stop()
+            self.ai_worker.wait(2000) # Wait up to 2s for it to finish current job
+            
         e.accept()
 
     def persist_state(self):
@@ -563,6 +592,11 @@ class WordDisplay(QMainWindow):
         self.settings["wpm"] = self.wpm
         self.settings["opacity"] = self.opacity
         self.settings["context_range"] = self.ctx_range
+        self.settings["flank_opacity"] = self.flank_opacity
+        self.settings["ai_enabled"] = self.ai_enabled
+        self.settings["ai_frequency"] = self.ai_frequency
+        self.settings["entity_enabled"] = self.entity_enabled
+        self.settings["entity_frequency"] = self.entity_frequency
         if "books" not in self.settings: self.settings["books"] = {}
         self.settings["books"][self.file_path] = self.index
         save_settings(self.settings)
@@ -570,25 +604,99 @@ class WordDisplay(QMainWindow):
     def toggle_reading(self):
         self.setFocus()
         if not self.words: return
+        
         if self.is_running:
+            # STOPPING
             self.timer.stop()
             self.is_running = False
+            self.rsvp_display.set_status(False) # Turn Red
             self.persist_state()
         else:
+            # STARTING
             self.is_running = True
+            self.rsvp_display.set_status(True)  # Turn Green
             self.schedule_next_word()
 
     def update_speed_from_slider(self):
+        """Called when user drags the slider"""
         self.wpm = self.slider.value()
-        self.wpm_label.setText(f"{self.wpm}")
-        
+        # Block signals to prevent feedback loop (Spinbox -> Slider -> Spinbox...)
+        self.wpm_spin.blockSignals(True)
+        self.wpm_spin.setValue(self.wpm)
+        self.wpm_spin.blockSignals(False)
+    
+    def update_speed_from_spinbox(self):
+        """Called when user types in the box"""
+        self.wpm = self.wpm_spin.value()
+        # Block signals to prevent feedback loop
+        self.slider.blockSignals(True)
+        self.slider.setValue(self.wpm)
+        self.slider.blockSignals(False)
+    
     def jump_to_percentage(self):
         if not self.words: return
         self.index = int((self.pct_spin.value() / 100) * len(self.words))
+        self.read_buffer = []
+        self.entity_buffer = []
         self.update_display_manual()
         self.highlight_current_chapter()
         self.setFocus()
+    
+    def jump_to_page_input(self):
+        # Called when user edits the Page Spinbox
+        if not self.words or not self.page_map: return
+        
+        target_page = self.page_spin.value()
+        if target_page in self.page_map:
+            self.index = self.page_map[target_page]
+            self.read_buffer = []
+            self.entity_buffer = []
+            self.update_display_manual()
+            self.highlight_current_chapter()
+            self.setFocus()
+    
+    def update_page_display_ui(self):
+        if not self.page_map or not self.page_starts: return
+        
+        idx = bisect.bisect_right(self.page_starts, self.index)
+        if idx > 0:
+            current_page = self.page_nums[idx - 1]
+            
+            # Optimization check
+            if self.page_spin.value() != current_page:
+                self.page_spin.blockSignals(True)
+                self.page_spin.setValue(current_page)
+                self.page_spin.blockSignals(False)
 
+            # --- FOOTNOTE CHECK ---
+            # Check if this page has footnotes
+            if current_page in self.footnotes:
+                self.btn_footnote.setEnabled(True)
+                self.btn_footnote.setStyleSheet("""
+                    QPushButton { color: #ccc; border: 1px solid #888; border-radius: 3px; }
+                    QPushButton:hover { border-color: #4a90e2; color: #4a90e2; }
+                """)
+                self.btn_footnote.setText("Footnote *")
+            else:
+                self.btn_footnote.setEnabled(False)
+                self.btn_footnote.setStyleSheet("color: #333; border: 1px solid #333;")
+                self.btn_footnote.setText("Footnote")
+    
+    def toggle_footnote_view(self):
+        # Pause reading to view
+        if self.is_running:
+            self.toggle_reading()
+            
+        current_page = self.page_spin.value()
+        content = self.footnotes.get(current_page, "No footnotes for this page.")
+        
+        # Use the modular dialog
+        dlg = FootnoteDialog(current_page, content, self)
+        dlg.exec()
+        
+        self.btn_footnote.setChecked(False) # Uncheck button after closing
+        self.setFocus() # Return focus to main window
+    
     def highlight_current_chapter(self):
         if not self.chapters: return
         r = 0
@@ -599,42 +707,127 @@ class WordDisplay(QMainWindow):
 
     def update_display_manual(self):
         if self.words and self.index < len(self.words):
-            self.rsvp_display.set_word(self.words[self.index])
+            current = self.words[self.index]
+            prev_w = self.words[self.index - 1] if self.index > 0 else ""
+            next_w = self.words[self.index + 1] if self.index < len(self.words) - 1 else ""
+            self.rsvp_display.set_word(current, prev_w, next_w)
             self.progress_bar.setValue(self.index)
             self.update_context_view()
+            self.update_page_display_ui()
 
     def schedule_next_word(self):
         if not self.is_running: return
-        
         base_ms = int(60000 / self.wpm)
         multiplier = 1.0
         
         if self.words and self.index < len(self.words):
             current_word = self.words[self.index]
-            last_char = current_word[-1] if current_word else ""
+            clean_word = current_word.rstrip('"\'”’)]}')
+            last_char = clean_word[-1] if clean_word else ""
             
-            if is_header(current_word):
+            # Priority checks
+            if is_header(current_word): 
                 multiplier = self.delays['header']
-            elif last_char in ['.', '?', '!']:
+            elif '...' in current_word or '…' in current_word: 
+                multiplier = self.delays['ellipsis']
+            elif '—' in clean_word: 
+                multiplier = self.delays['long_hyphen']
+            elif '(' in current_word or ')' in current_word: 
+                multiplier = self.delays['parens']
+            elif last_char in ['.', '?', '!']: 
                 multiplier = self.delays['period']
-            elif last_char in [',', ':', ';']:
+            elif last_char in [',', ':', ';']: 
                 multiplier = self.delays['comma']
-            elif '-' in current_word:
+            elif '-' in current_word: 
                 multiplier = self.delays['hyphen']
-        
+                
         actual_delay = int(base_ms * multiplier)
         self.timer.start(actual_delay)
+
+    def trigger_background_ai(self):
+        max_ctx = self.ai_backend.max_context_length
+        overlap = self.ai_backend.comprehension_overlap
+
+        text_chunk = " ".join(self.read_buffer[-max_ctx:])
+        
+        if len(self.read_buffer) > overlap:
+            self.read_buffer = self.read_buffer[-overlap:]
+        else:
+            self.read_buffer = []
+        
+        prompt = (
+            f"Read the following text:\n\"{text_chunk}\"\n\n"
+            f"Task: Generate a single, concise reading comprehension question based on this text. "
+            f"Focus on testing the reader's memory of specific facts or logic from this passage. "
+            f"Do not provide the answer."
+        )
+        
+        metadata = {
+            "type": "QUESTION",
+            "context": text_chunk
+        }
+        
+        self.ai_worker.add_task(prompt, metadata)
+
+    def trigger_entity_check(self):
+        full_context = " ".join(self.entity_buffer)
+        
+        prompt = (
+            f"Analyze the text below. Extract ONLY:\n"
+            f"1. Important People (Specific Named Characters)\n"
+            f"2. Important Dates or Years\n\n"
+            f"For each, provide a brief summary of their significance in this specific text. Use ONLY information from the context.\n"
+            f"Format: 'Name/Date - Significance'\n"
+            f"Constraints:\n"
+            f"- EXCLUDE Section Headers, Chapter Titles, Locations, and generic nouns.\n"
+            f"- If the entity is mentioned but has no significance here, ignore it.\n"
+            f"- If NO People or Dates are found, output exactly: 'None'.\n\n"
+            f"Text: {full_context}"
+        )
+        
+        metadata = {
+            "type": "ENTITY",
+            "context": full_context
+        }
+        
+        self.ai_worker.add_task(prompt, metadata)
+
+        overlap = self.ai_backend.entity_overlap
+        self.entity_buffer = self.entity_buffer[-overlap:]
+        
+    def on_ai_question_ready(self, question, context_text):
+        self.ai_panel.add_question(question, context_text)
+
+    def on_entity_ready(self, response, _):
+        if "None" not in response: self.entity_panel.add_entities(response)
 
     def show_next_word(self):
         self.index += 1
         if self.index < len(self.words):
-            self.rsvp_display.set_word(self.words[self.index])
+            current = self.words[self.index]
+            prev_w = self.words[self.index - 1] if self.index > 0 else ""
+            next_w = self.words[self.index + 1] if self.index < len(self.words) - 1 else ""
+            self.rsvp_display.set_word(current, prev_w, next_w)
             self.progress_bar.setValue(self.index)
             self.update_context_view()
+            self.update_page_display_ui()
+            
+            if self.ai_enabled:
+                self.read_buffer.append(current)
+                if len(self.read_buffer) >= self.ai_frequency:
+                    if current.rstrip('"\'”’)]}').endswith(('.', '?', '!')):
+                        self.trigger_background_ai()
+            
+            if self.entity_enabled:
+                self.entity_buffer.append(current)
+                if len(self.entity_buffer) >= self.entity_frequency:
+                    self.trigger_entity_check()
+            
             self.schedule_next_word()
         else:
-            self.rsvp_display.set_word("Finished")
+            self.rsvp_display.set_word("Finished", "", "")
             self.is_running = False
+            self.rsvp_display.set_status(False)
             self.persist_state()
 
 if __name__ == "__main__":
