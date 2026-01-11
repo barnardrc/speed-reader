@@ -9,6 +9,7 @@ import stat
 import webbrowser
 import winreg 
 import ctypes.util
+import json
 
 # --- Configuration ---
 REQUIREMENTS_FILE = "requirements.txt"
@@ -199,7 +200,7 @@ def check_and_install_ollama():
             print("[+] Running install script (May prompt for sudo password)...")
             # shell=True is required for piping curl to sh
             subprocess.run("curl -fsSL https://ollama.com/install.sh | sh", shell=True, check=True)
-
+        
         print("[*] Waiting for Ollama service to start...")
         for _ in range(10): # Wait up to 20 seconds
             try:
@@ -216,38 +217,110 @@ def check_and_install_ollama():
         print(f"[!] Installation failed: {e}")
         return False
 
+def ensure_ollama_service():
+    """
+    Ensures the Ollama background service is running.
+    If it's down, attempts to start it and waits for a heartbeat.
+    """
+    print("[*] Checking Ollama service status...")
+    
+    # 1. Try to connect to the API
+    url = "http://localhost:11434"
+    for _ in range(3): # Quick check (3 attempts)
+        try:
+            urllib.request.urlopen(url, timeout=0.5)
+            return True # Service is up
+        except (urllib.error.URLError, ConnectionRefusedError):
+            time.sleep(0.5)
+
+    print("    - Service is down. Attempting to start...")
+
+    # 2. Start the service if unreachable
+    try:
+        if platform.system() == "Windows":
+            # Start detached process to avoid blocking the script
+            subprocess.Popen(
+                ["ollama", "serve"], 
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        else:
+            # Linux/Mac
+            subprocess.Popen(
+                ["ollama", "serve"], 
+                stdout=subprocess.DEVNULL, 
+                stderr=subprocess.DEVNULL,
+                start_new_session=True
+            )
+    except Exception as e:
+        print(f"[!] Failed to start Ollama service: {e}")
+        return False
+
+    # 3. Wait for startup (up to 20 seconds)
+    print("    - Waiting for service to initialize...", end="", flush=True)
+    for _ in range(20):
+        try:
+            urllib.request.urlopen(url, timeout=1)
+            print(" Done.")
+            return True
+        except Exception:
+            time.sleep(1)
+            print(".", end="", flush=True)
+            
+    print("\n[!] Service failed to start automatically.")
+    print("    Please open a separate terminal and run 'ollama serve'")
+    return False
+
 def pull_model(py_path):
-    """
-    Uses the venv python to check hardware and pull model.
-    """
-    # Verify module exists before calling
     if not os.path.exists(os.path.join("utils", "dependents.py")):
         print("[!] Warning: utils/dependents.py not found. Skipping model detection.")
         return
 
+    if not ensure_ollama_service():
+        return
+
     cmd = [
         py_path, "-c",
-        f"import sys; sys.path.append('.'); "
+        f"import sys, json; sys.path.append('.'); "
         f"from {HARDWARE_MONITOR_MODULE} import HardwareMonitor; "
-        f"print(HardwareMonitor().get_recommendation()['recommended_model_tag'])"
+        f"print(json.dumps(HardwareMonitor().get_recommendation()))"
     ]
 
     try:
-        print("\n[+] Selecting AI model...")
-        model_tag = subprocess.check_output(cmd, text=True).strip()
+        print("\n[+] Analyzing hardware for AI compatibility...")
+        output = subprocess.check_output(cmd, text=True).strip()
+        data = json.loads(output)
         
-        # Check installed models
+        model_tag = data.get('recommended_model_tag')
+        # specific 'reason' key, or fallback to a generic string
+        hw_type = data.get('hardware_type', 'Optimized for available CPU/GPU')
+        memory = data.get('detected_memory', 'Optimized for your available VRAM/RAM') 
+        
+        print(f"    - HW:             {hw_type}")
+        print(f"    - Memory:         {memory}")
+        print(f"    - Recommendation: {model_tag}")
+
+        # Check if already installed
         result = subprocess.run(["ollama", "list"], capture_output=True, text=True)
         if model_tag in result.stdout:
-            print(f"[*] Model '{model_tag}' already installed.")
+            print(f"[*] Model '{model_tag}' is already installed.")
             return
 
-        print(f"    - Recommended: {model_tag}")
-        subprocess.run(["ollama", "pull", model_tag], check=True)
+        # User Confirmation
+        print(f"\n    The model '{model_tag}' is required for this hardware profile.")
+        confirm = input(f"    Download and install now? (y/n): ").strip().lower()
+        
+        if confirm == 'y':
+            print("    - Pulling model (This may take a while)...")
+            subprocess.run(["ollama", "pull", model_tag], check=True)
+            print("    - Install complete.")
+        else:
+            print("    [!] Warning: No model installed. The application may not function correctly.")
         
     except Exception as e:
-        print(f"[!] Model setup warning: {e}")
-
+        print(f"[!] Model setup error: {e}")
+        
 def create_shortcuts(py_path):
     print("\n[+] Creating launch scripts...")
     system = platform.system()
