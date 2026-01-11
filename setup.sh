@@ -1,13 +1,23 @@
 #!/bin/bash
-# Check for Python 3
+
+# 1. Check for Standard Python
 if command -v python3 &>/dev/null; then
-    PYTHON_CMD=python3
+    python3 install.py
+    exit 0
 elif command -v python &>/dev/null; then
-    PYTHON_CMD=python
-else
-    echo "Python is not installed. Please install Python 3."
-    exit 1
+    python install.py
+    exit 0
 fi
 
-# Run the Python installer
-$PYTHON_CMD install.py
+# 2. Check for Conda (Fallback)
+if command -v conda &>/dev/null; then
+    echo "Python command not found, but Conda detected."
+    echo "Launching installer via Conda..."
+    conda run -n base python install.py
+    exit 0
+fi
+
+# 3. Failure
+echo "Error: Neither Python nor Conda were found."
+echo "Please install Python 3."
+exit 1
