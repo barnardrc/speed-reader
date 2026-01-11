@@ -16,7 +16,7 @@ class AIBackendManager:
         
         # General Config
         self.timeout = self.settings.get("ai_timeout", 30)
-        self.max_context_length = 1000 
+        self.max_context_length = 1000
         self.comprehension_overlap = 200
         self.entity_overlap = 20
         

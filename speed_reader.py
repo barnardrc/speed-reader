@@ -16,12 +16,13 @@ from utils.style_sheet import DARK_THEME
 from utils.text_utils import is_header
 from utils.ai import SequentialAIWorker, AIQuestionPanel, EntityPanel
 from utils.ai_backend import AIBackendManager
-from utils.settings import load_settings, save_settings, PAUSE_CONFIG
+from utils.settings import load_settings, save_settings, PAUSE_CONFIG, complete_first_run
 from utils.book_loader import BookLoader
 
 # UI Components
 from ui.dialogs import PauseSettingsDialog, AISettingsDialog, FootnoteDialog
 from ui.widgets import RSVPWidget, ContextFlowWidget, QueueMonitorWidget
+from ui.tutorial import TutorialOverlay # <--- NEW IMPORT
 
 class WordDisplay(QMainWindow):
     def __init__(self):
@@ -106,17 +107,27 @@ class WordDisplay(QMainWindow):
         
         # --- Top Bar ---
         top = QHBoxLayout()
-        btn_open = QPushButton("Open Book")
-        btn_open.setFixedSize(100, 30)
-        btn_open.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        btn_open.clicked.connect(self.open_file_dialog)
-        top.addWidget(btn_open)
         
-        btn_menu = QPushButton("☰ List")
-        btn_menu.setFixedSize(80, 30)
-        btn_menu.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        btn_menu.clicked.connect(self.toggle_sidebar)
-        top.addWidget(btn_menu)
+        self.btn_open = QPushButton("Open Book")
+        self.btn_open.setFixedSize(100, 30)
+        self.btn_open.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_open.clicked.connect(self.open_file_dialog)
+        top.addWidget(self.btn_open)
+        
+        self.btn_menu = QPushButton("☰ List")
+        self.btn_menu.setFixedSize(80, 30)
+        self.btn_menu.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_menu.clicked.connect(self.toggle_sidebar)
+        top.addWidget(self.btn_menu)
+        
+        # NEW: Help / Tutorial Button
+        self.btn_help = QPushButton("?")
+        self.btn_help.setFixedSize(30, 30)
+        self.btn_help.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_help.setToolTip("Replay Tutorial")
+        # Force start_tutorial to run regardless of 'first_run' setting
+        self.btn_help.clicked.connect(self.start_tutorial)
+        top.addWidget(self.btn_help)
         
         top.addStretch()
         
@@ -197,6 +208,10 @@ class WordDisplay(QMainWindow):
 
         # --- Controls Bar ---
         controls = QHBoxLayout()
+        
+        # Store layout for tutorial highlighting later
+        self.speed_controls_layout = controls
+        
         controls.addWidget(QLabel("Speed:"))
         self.wpm_label = QLabel(f"{self.wpm}")
         self.wpm_spin = QSpinBox()
@@ -208,40 +223,59 @@ class WordDisplay(QMainWindow):
         self.wpm_spin.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.wpm_spin.valueChanged.connect(self.update_speed_from_spinbox)
         controls.addWidget(self.wpm_spin)
+        
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(60, 1000)
         self.slider.setValue(self.wpm)
-        self.slider.setFixedWidth(120)
+        self.slider.setMinimumWidth(80) # Prevent collapse
         self.slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.slider.valueChanged.connect(self.update_speed_from_slider)
-        controls.addWidget(self.slider)
+        controls.addWidget(self.slider, stretch=1) # Allow expansion
+        
         controls.addSpacing(10)
-        controls.addWidget(QLabel("Ctx:"))
+        
+        self.display_controls_container = QWidget()
+        dc_layout = QHBoxLayout()
+        dc_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 1. Context Slider
+        dc_layout.addWidget(QLabel("Context:"))
         self.op_slider = QSlider(Qt.Orientation.Horizontal)
         self.op_slider.setRange(0, 100)
         self.op_slider.setValue(self.opacity)
-        self.op_slider.setFixedWidth(60)
+        self.op_slider.setMinimumWidth(80) # Prevent collapse
         self.op_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.op_slider.valueChanged.connect(self.update_opacity)
-        controls.addWidget(self.op_slider)
-        controls.addSpacing(10)
-        controls.addWidget(QLabel("Flank:"))
+        dc_layout.addWidget(self.op_slider, stretch=1)
+        
+        dc_layout.addSpacing(15)
+
+        # 2. Flank Slider
+        dc_layout.addWidget(QLabel("Flank:"))
         self.flank_slider = QSlider(Qt.Orientation.Horizontal)
         self.flank_slider.setRange(0, 255)
         self.flank_slider.setValue(self.flank_opacity)
-        self.flank_slider.setFixedWidth(60)
+        self.flank_slider.setMinimumWidth(80) # Prevent collapse
         self.flank_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.flank_slider.valueChanged.connect(self.update_flank_opacity)
-        controls.addWidget(self.flank_slider)
-        controls.addSpacing(10)
-        controls.addWidget(QLabel("Range:"))
+        dc_layout.addWidget(self.flank_slider, stretch=1)
+
+        dc_layout.addSpacing(15)
+
+        # 3. Range Slider
+        dc_layout.addWidget(QLabel("Range:"))
         self.ctx_slider = QSlider(Qt.Orientation.Horizontal)
         self.ctx_slider.setRange(5, 100)
         self.ctx_slider.setValue(self.ctx_range)
-        self.ctx_slider.setFixedWidth(60)
+        self.ctx_slider.setMinimumWidth(80) # Prevent collapse
         self.ctx_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.ctx_slider.valueChanged.connect(self.update_ctx_range)
-        controls.addWidget(self.ctx_slider)
+        dc_layout.addWidget(self.ctx_slider, stretch=1)
+        
+        self.display_controls_container.setLayout(dc_layout)
+        
+        # Add container with higher stretch (3) so it gets 3x the space of the WPM slider (1)
+        controls.addWidget(self.display_controls_container, stretch=3)
         
         controls.addSpacing(10)
         
@@ -255,7 +289,7 @@ class WordDisplay(QMainWindow):
         self.btn_ai_settings.clicked.connect(self.open_ai_settings)
         controls.addWidget(self.btn_ai_settings)
 
-        controls.addStretch()
+        # Removed 'controls.addStretch()' from the end so items fill the width
         self.content_layout.addLayout(controls)
         
         self.content_widget.setLayout(self.content_layout)
@@ -287,7 +321,39 @@ class WordDisplay(QMainWindow):
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.show_next_word)
         self.setFocus()
-    
+
+        # --- TUTORIAL CHECK ---
+        if self.settings.get("first_run", False):
+            # Defer execution until window is fully rendered
+            QTimer.singleShot(500, self.start_tutorial)
+
+    def start_tutorial(self):
+        # Prevent multiple instances
+        if hasattr(self, 'tutorial') and self.tutorial.isVisible():
+            return
+
+        steps = [
+            (self.btn_open, "Start here! Click 'Open Book' to load an EPUB or PDF."),
+            (self.sidebar, "This sidebar displays chapters. Click any chapter to jump directly to it."),
+            (self.btn_menu, "Need more space? Click 'List' to toggle the chapter sidebar visibility."),
+            (self.queue_monitor, "This is the AI Queue Monitor. It provides extra information when about when AI is processing requests."),
+            (self.page_spin, "Know the exact page? Type it here to jump instantly."),
+            (self.pct_btn, "Or use the percentage jump to navigate through the book."),
+            (self.btn_footnote, "If a page has footnotes, this button lights up. Click to read them without losing your place."),
+            (self.slider, "Speed Control (WPM). Use Up/Down arrow keys while reading to adjust this on the fly."),
+            (self.display_controls_container, "Customize your view.\nContext: Context visibility.\nFlank: Side-word visibility.\nRange: How much context to show."),
+            (self.btn_pauses, "Smart Pauses: Configure how long the reader pauses on commas, periods, and headers."),
+            (self.btn_ai_settings, "Configure your local LLM (Ollama) or adjust how often the AI reads the text for context.")
+        ]
+        
+        self.tutorial = TutorialOverlay(self.central_widget, steps)
+        self.tutorial.finished.connect(self.on_tutorial_finished)
+        self.tutorial.show()
+
+    def on_tutorial_finished(self):
+        complete_first_run()
+        QMessageBox.information(self, "Ready", "You're all set! Open a book and press SPACE to start reading.")
+
     def update_overlay_positions(self):
         """Recalculates positions for the floating panels based on current layout."""
         if not hasattr(self, 'h_line'): return
@@ -345,6 +411,11 @@ class WordDisplay(QMainWindow):
     
     def resizeEvent(self, event):
         self.update_overlay_positions()
+        
+        if hasattr(self, 'tutorial') and self.tutorial.isVisible():
+            self.tutorial.setGeometry(self.central_widget.rect())
+            self.tutorial.center_msg_box()
+            
         super().resizeEvent(event)
     
     def toggle_sidebar(self):

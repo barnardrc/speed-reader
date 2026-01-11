@@ -2,15 +2,15 @@
 import requests
 import uuid
 import queue
-from PyQt6.QtCore import QThread, pyqtSignal, Qt, QPropertyAnimation, QEasingCurve, QRect, QPoint, QMutex
+from PyQt6.QtCore import (QThread, pyqtSignal, Qt, QPropertyAnimation, 
+                          QEasingCurve, QRect, QMutex)
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QTextEdit, 
     QPushButton, QTabWidget, QFrame, QTextBrowser, QProgressBar, 
-    QGraphicsOpacityEffect, QListWidget, QListWidgetItem, QMenu, QSizePolicy
+    QListWidget, QListWidgetItem, QMenu, QSizePolicy
 )
-from PyQt6.QtGui import QFont, QColor, QCursor
+from PyQt6.QtGui import QFont
 
-MAX_AI_CONTEXT = 300
 
 class SequentialAIWorker(QThread):
     result_ready = pyqtSignal(str, dict) 
