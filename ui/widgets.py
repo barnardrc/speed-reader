@@ -43,11 +43,8 @@ class ContextFlowWidget(QWidget):
         step = -1 if delta > 0 else 1
         
         self.scrolled.emit(step)
-    
-    from PyQt6.QtGui import QLinearGradient, QPen  # Ensure these are imported
 
     def paintEvent(self, event):
-        # 1. Always setup painter first (so we can draw borders even if empty)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setFont(self.font_ctx)
@@ -55,7 +52,6 @@ class ContextFlowWidget(QWidget):
         w_height = self.height()
         w_width = self.width()
         
-        # --- 2. THE VISUAL BORDER (Draws always) ---
         border_padding = 20
         border_rect = QRectF(
             border_padding, 
@@ -64,10 +60,9 @@ class ContextFlowWidget(QWidget):
             w_height - 20
         )
 
-        # Vertical Gradient (Top/Bottom Fades)
         grad_border = QLinearGradient(0, 0, 0, w_height)
         c_trans = QColor(150, 150, 150, 0)
-        c_vis = QColor(150, 150, 150, 100) # Adjust alpha for subtlety
+        c_vis = QColor(150, 150, 150, 100)
 
         grad_border.setColorAt(0.0, c_trans)
         grad_border.setColorAt(0.2, c_trans)
@@ -83,21 +78,14 @@ class ContextFlowWidget(QWidget):
         painter.setPen(border_pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(border_rect, 15, 15)
-
-        # --- 3. THE HORIZONTAL SEPARATOR (Draws always) ---
-        # Anchors the active reading line.
-        # Positioned slightly below the vertical center (where text sits)
-        
-        # Calculate approximate baseline offset (half line height + a bit of padding)
         center_y = w_height / 2
         line_height = self.metrics.height() + 10
         separator_y = center_y + (line_height * 3.5) + 5 
 
-        # Horizontal Gradient (Left/Right Fades)
         grad_sep = QLinearGradient(0, 0, w_width, 0)
         grad_sep.setColorAt(0.0, c_trans)
         grad_sep.setColorAt(0.3, c_trans)
-        grad_sep.setColorAt(0.5, QColor(150, 150, 150, 80)) # Slightly fainter than border
+        grad_sep.setColorAt(0.5, QColor(150, 150, 150, 80))
         grad_sep.setColorAt(0.7, c_trans)
         grad_sep.setColorAt(1.0, c_trans)
 
@@ -111,10 +99,8 @@ class ContextFlowWidget(QWidget):
             QPointF(w_width - border_padding - 10, separator_y)
         )
 
-        # --- 4. CHECK FOR DATA ---
         if not self.words: return
 
-        # --- 5. TEXT RENDERING (Existing Logic) ---
         base_alpha_val = int(255 * (self.opacity / 100.0))
         hl_color = QColor("#ffd700")
         
@@ -125,7 +111,6 @@ class ContextFlowWidget(QWidget):
         left_bound = margin_x
         right_bound = w_width - margin_x
 
-        # Define Fade Helper
         def get_combined_alpha(rect_y_center, current_step, max_steps):
             screen_factor = 1.0
             if rect_y_center < screen_fade_zone:
@@ -144,7 +129,6 @@ class ContextFlowWidget(QWidget):
             final_factor = min(screen_factor, index_factor)
             return int(base_alpha_val * final_factor)
 
-        # --- Draw Active Word ---
         active_word = self.words[self.index]
         painter.save() 
         f = painter.font()
@@ -168,7 +152,6 @@ class ContextFlowWidget(QWidget):
         painter.drawText(QPointF(aw_rect.left(), text_y), active_word)
         painter.restore() 
 
-        # --- Draw Forwards ---
         cursor_x = aw_rect.right() + space_width
         cursor_y = aw_rect.top()
         actual_end_idx = min(len(self.words), self.index + self.ctx_range)
@@ -192,7 +175,6 @@ class ContextFlowWidget(QWidget):
                     painter.fillRect(rect, QColor(255, 255, 255, bg_alpha))
             cursor_x += w + space_width
 
-        # --- Draw Backwards ---
         cursor_x = aw_rect.left() - space_width
         cursor_y = aw_rect.top()
         actual_start_idx = max(-1, self.index - self.ctx_range)
@@ -223,7 +205,7 @@ class RSVPWidget(QWidget):
         self.prev_text = ""
         self.next_text = ""
         self.flank_opacity = 60
-        self.is_active = False # Track status state
+        self.is_active = False
         
         self.font = QFont("Consolas", 48, QFont.Weight.Bold)
         self.metrics = QFontMetrics(self.font)
@@ -239,8 +221,7 @@ class RSVPWidget(QWidget):
     def set_flank_opacity(self, value):
         self.flank_opacity = max(0, min(255, int(value)))
         self.update()
-
-    # NEW: Method to toggle the status bar color
+        
     def set_status(self, is_active):
         """
         Updates the peripheral status bar.
@@ -255,7 +236,6 @@ class RSVPWidget(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setFont(self.font)
 
-        # --- 0. DRAW STATUS BAR (GRADIENT GLOW) ---
         bar_width = 300      
         bar_height = 6       
         radius = 3           
@@ -264,19 +244,15 @@ class RSVPWidget(QWidget):
         x_bar = (self.width() - bar_width) // 2
         y_bar = self.height() - bar_height - margin_bottom
 
-        # Create a Horizontal Gradient (Left -> Right)
-        # This creates a "glowing core" look
         gradient = QLinearGradient(x_bar, y_bar, x_bar + bar_width, y_bar)
 
         if self.is_active:
-            # Green: Darker translucent edges, bright opaque center
-            c_center = QColor("#4caf50") # Bright Material Green
-            c_edge = QColor("#2e7d32")   # Darker Green
-            c_edge.setAlpha(180)         # Semi-transparent edges
+            c_center = QColor("#4caf50")
+            c_edge = QColor("#2e7d32") 
+            c_edge.setAlpha(180)   
         else:
-            # Red: Darker translucent edges, bright opaque center
-            c_center = QColor("#e57373") # Softer Red
-            c_edge = QColor("#c62828")   # Darker Red
+            c_center = QColor("#e57373")
+            c_edge = QColor("#c62828")
             c_edge.setAlpha(180)
 
         gradient.setColorAt(0.0, c_edge)
@@ -295,7 +271,6 @@ class RSVPWidget(QWidget):
             painter.drawText(draw_rect, Qt.AlignmentFlag.AlignCenter, self.text)
             return
 
-        # --- 1. OVP CALCULATION ---
         length = len(self.text)
         if length <= 1: orp = 0
         elif length <= 5: orp = 1
@@ -312,12 +287,10 @@ class RSVPWidget(QWidget):
         pivot_w = self.metrics.horizontalAdvance(pivot_char)
         right_w = self.metrics.horizontalAdvance(right_part)
 
-        # Center Pivot Calculation
         cx = self.width() // 2
         cy = (self.height() + self.metrics.ascent() - self.metrics.descent()) // 2
         pivot_draw_x = cx - (pivot_w // 2)
 
-        # --- 2. DRAW FOCUS WORD ---
         painter.setPen(QColor("#ff5555"))
         painter.drawText(pivot_draw_x, cy, pivot_char)
 
@@ -339,8 +312,6 @@ class RSVPWidget(QWidget):
         
         left_wall_x = cx - dist_left
         right_wall_x = cx + dist_right
-
-        # --- DRAW NEIGHBORS ---
         
         if self.prev_text:
             prev_w = self.metrics.horizontalAdvance(self.prev_text)
@@ -355,14 +326,10 @@ class RSVPWidget(QWidget):
             painter.setPen(QColor(255, 255, 255, self.flank_opacity))
             painter.drawText(draw_x, cy, self.next_text)
 
-# Add this import if missing
-from PyQt6.QtCore import pyqtSignal
-
 class QueueMonitorPopup(QDialog):
     """The floating overlay for queue details."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        # CHANGED: Use 'Tool' instead of 'Popup' so it doesn't auto-close
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint | 
             Qt.WindowType.Tool | 
@@ -370,7 +337,6 @@ class QueueMonitorPopup(QDialog):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
-        # ... (The rest of your layout/UI code remains exactly the same) ...
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(layout)
@@ -416,9 +382,7 @@ class QueueMonitorPopup(QDialog):
         frame_layout.addWidget(self.list_pending)
         
         layout.addWidget(self.frame)
-
-    # REMOVED: hideEvent and closed signal are no longer needed.
-
+        
     def update_list(self, task_names):
         self.list_pending.clear()
         for name in task_names:
@@ -464,8 +428,7 @@ class QueueMonitorWidget(QWidget):
         
         self.popup = QueueMonitorPopup(self)
         self.popup.hide()
-        
-        # Track if we have installed the filter yet
+
         self.filter_installed = False
 
     def showEvent(self, event):
@@ -496,8 +459,6 @@ class QueueMonitorWidget(QWidget):
         """Calculates the global position and moves the popup there."""
         global_pos = self.btn_toggle.mapToGlobal(QPoint(0, self.btn_toggle.height()))
         
-        # Align right edge of popup with right edge of button
-        # (250 is the popup width set in toggle_popup)
         x_pos = global_pos.x() - (250 - self.btn_toggle.width())
         self.popup.move(x_pos, global_pos.y() + 5)
 

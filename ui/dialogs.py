@@ -21,8 +21,6 @@ class PauseSettingsDialog(QDialog):
         self.form = QFormLayout()
         self.spinners = {} 
 
-        # Dynamically build rows based on config dict
-        # Config format: {'key': (default_val, "Label Text")}
         for key, (default, label) in config.items():
             setting_key = f"{key}_delay"
             val = settings.get(setting_key, default)
@@ -47,7 +45,7 @@ class PauseSettingsDialog(QDialog):
         layout.setSpacing(0)
 
         dsb = QDoubleSpinBox()
-        dsb.setRange(0.0, 5.0) # Reasonable range for delays
+        dsb.setRange(0.0, 5.0)
         dsb.setSingleStep(0.1)
         dsb.setValue(float(val))
         dsb.setSuffix("x")
@@ -69,7 +67,6 @@ class PauseSettingsDialog(QDialog):
             }
         """)
 
-        # Custom Buttons
         btn_container = QWidget()
         btn_layout = QVBoxLayout()
         btn_layout.setContentsMargins(0, 0, 0, 0)
@@ -123,8 +120,7 @@ class AISettingsDialog(QDialog):
         self.backend = backend_manager
         self.layout = QVBoxLayout()
         self.form = QFormLayout()
-        
-        # --- 1. Connection & Model Selection ---
+
         status, msg = self.backend.check_status()
         color = "green" if status else "red"
         status_lbl = QLabel(f"{msg}")
@@ -147,7 +143,6 @@ class AISettingsDialog(QDialog):
         
         self.form.addRow(QLabel("")) 
 
-        # --- 2. Existing Settings ---
         self.ai_enabled = settings.get("ai_enabled", False)
         self.ai_freq = settings.get("ai_frequency", 500)
         self.entity_enabled = settings.get("entity_enabled", True)
@@ -196,7 +191,6 @@ class AISettingsDialog(QDialog):
         sb.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sb.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
         
-        # Matches PauseSettingsDialog Style
         sb.setStyleSheet("""
             QSpinBox {
                 background-color: #333;
@@ -294,17 +288,16 @@ class FootnoteDialog(QDialog):
         
         self.text_browser = QTextBrowser()
         
-        # 1. Escape HTML
         safe_content = html.escape(content)
         
-        # 2. Aggressive Regex
+        # Regex
         # (?<=[\s\>])   -> Lookbehind: Must be preceded by Space OR closing tag (handle previous breaks)
         # (\d{1,2})     -> Capture 1: The Number (1-99)
         # ([.]?)        -> Capture 2: Optional dot
         # (\s*)         -> Capture 3: Optional space
         # (?=[A-Z])     -> Lookahead: Must be followed by a Capital Letter
         
-        # NOTE: We prepend a space to safe_content to ensure the regex catches the very first number
+        # Prepend a space to safe_content to ensure the regex catches the very first number
         work_text = " " + safe_content
         
         formatted_content = re.sub(
@@ -313,7 +306,6 @@ class FootnoteDialog(QDialog):
             work_text
         )
         
-        # 3. Cleanup: Remove the extra leading break/space we might have added
         formatted_content = formatted_content.strip()
         if formatted_content.startswith("<br><br>"):
             formatted_content = formatted_content[8:]

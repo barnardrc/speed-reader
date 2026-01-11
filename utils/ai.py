@@ -1,4 +1,9 @@
-# ai.py
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Jan 10 20:42:08 2026
+
+@author: barna
+"""
 import requests
 import uuid
 import queue
@@ -21,7 +26,6 @@ class SequentialAIWorker(QThread):
     processing_started = pyqtSignal(str)   
     processing_finished = pyqtSignal()     
 
-    # CHANGED: Accept backend_manager in init
     def __init__(self, backend_manager):
         super().__init__()
         self.manager = backend_manager
@@ -106,12 +110,11 @@ class SubmitTextEdit(QTextEdit):
 
 class QuestionTab(QWidget):
     closed = pyqtSignal(QWidget)
-    # New signal: (Prompt, Context, Tab_ID)
     validation_requested = pyqtSignal(str, str, str)
     
     def __init__(self, question_text, context_text, parent=None):
         super().__init__(parent)
-        self.tab_id = str(uuid.uuid4()) # Unique ID for routing
+        self.tab_id = str(uuid.uuid4())
         self.context_text = context_text
         self.question_text = question_text
         
@@ -162,12 +165,12 @@ class QuestionTab(QWidget):
         self.btn_action.setText("Waiting for Queue...")
         self.loader.show()
         
-        # CHANGED: Strict evaluation prompt with evidence requirement
         prompt = (
             f"Context: \"{self.context_text}\"\n"
             f"Question: \"{self.question_text}\"\n"
             f"User Answer: \"{user_ans}\"\n\n"
             f"Task: Evaluate my answer based on the provided context.\n"
+            f"If I provide a non answer or just ask a question, be helpful and assist with the provided context.\n"
             f"1. You must rate my answer out of a total of 5.\n"
             f"2. Follow immediately with a concise explanation citing specific evidence from the text to support your rating.\n"
             f"3. Explain why I, if I did not, get a max rating."
@@ -267,14 +270,9 @@ class AIQuestionPanel(QFrame):
         hb_layout = QVBoxLayout()
         hb_layout.setContentsMargins(0,0,0,0)
         self.header_bar.setLayout(hb_layout)
-        
-        # CHANGED: Use QPushButton for native hover/click handling
-        # CHANGED: Arrow on Left, Text on Right
         self.header_btn = QPushButton("▲ Comprehension Stack")
         self.header_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.header_btn.setFont(QFont("Arial", 11, QFont.Weight.Bold))
-        
-        # CHANGED: Align Right, Padding Right, Hover Highlight
         self.header_btn.setStyleSheet("""
             QPushButton {
                 text-align: right;
@@ -304,7 +302,6 @@ class AIQuestionPanel(QFrame):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            # Resize logic still handled by Frame, Toggle logic handled by Button
             if event.position().y() <= self.resize_margin and self.is_expanded:
                 self.is_resizing = True
                 event.accept()
@@ -315,7 +312,6 @@ class AIQuestionPanel(QFrame):
         if self.is_expanded and event.position().y() <= self.resize_margin:
             self.setCursor(Qt.CursorShape.SizeVerCursor)
         elif event.position().y() >= self.height() - 40:
-            # Header button handles cursor, but fallback here
             self.setCursor(Qt.CursorShape.PointingHandCursor)
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
@@ -339,10 +335,8 @@ class AIQuestionPanel(QFrame):
         self.is_expanded = not self.is_expanded
         arrow = "▼" if self.is_expanded else "▲"
         
-        # CHANGED: Arrow on left
         self.header_btn.setText(f"{arrow} Comprehension Stack")
         
-        # Reset to base style (Grey text, White hover)
         self.header_btn.setStyleSheet("""
             QPushButton {
                 text-align: right;
@@ -391,7 +385,6 @@ class AIQuestionPanel(QFrame):
 
     def flash_update(self):
         if not self.is_expanded:
-            # Highlight Blue to indicate update, preserve layout
             self.header_btn.setStyleSheet("""
                 QPushButton {
                     text-align: right;
@@ -549,7 +542,6 @@ class EntityPanel(QFrame):
         added_count = 0
         existing = set()
         
-        # Load existing items to prevent duplicates
         for i in range(self.list_widget.count()):
             t = self.list_widget.item(i).text()
             if " - " in t: 
@@ -561,20 +553,16 @@ class EntityPanel(QFrame):
         for line in lines:
             clean = line.strip().lstrip('-• ').strip()
             
-            # 1. Filter empty or "None" variations
             if not clean: continue
             if clean.lower().startswith("none"): continue
             
-            # 2. Ensure format is correct
             if " - " not in clean: continue
             
             name_part = clean.split(" - ")[0].strip()
             name_lower = name_part.lower()
-
-            # 3. Code-side filter for Headers/Titles
+            
             if any(x in name_lower for x in blacklist): continue
             
-            # 4. Add if new
             if name_lower not in existing:
                 self.list_widget.addItem(QListWidgetItem(clean))
                 existing.add(name_lower)

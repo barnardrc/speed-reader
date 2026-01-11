@@ -1,2 +1,7 @@
 books/
 *.json
+run.bat
+venv/
+__pycache__/
+*.py[cod]
+*$py.class

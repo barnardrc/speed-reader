@@ -1,4 +1,9 @@
-# speed_reader.py
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Jan 10 20:42:08 2026
+
+@author: barna
+"""
 import sys
 import os
 import bisect
@@ -39,7 +44,7 @@ class WordDisplay(QMainWindow):
         self.setStyleSheet(DARK_THEME)
         self.settings = load_settings()
         
-        # AI Backend
+        # AI
         self.ai_backend = AIBackendManager(self.settings)
         
         # Check Connection
@@ -48,8 +53,7 @@ class WordDisplay(QMainWindow):
         
         self.entity_enabled = self.settings.get("entity_enabled", True)
         self.entity_frequency = self.settings.get("entity_frequency", 300)
-        
-        # Perform the check
+    
         is_connected, status_msg = self.ai_backend.check_status()
         
         if (self.ai_enabled or self.entity_enabled) and not is_connected:
@@ -107,7 +111,6 @@ class WordDisplay(QMainWindow):
         
         # --- Top Bar ---
         top = QHBoxLayout()
-        
         self.btn_open = QPushButton("Open Book")
         self.btn_open.setFixedSize(100, 30)
         self.btn_open.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -120,21 +123,18 @@ class WordDisplay(QMainWindow):
         self.btn_menu.clicked.connect(self.toggle_sidebar)
         top.addWidget(self.btn_menu)
         
-        # NEW: Help / Tutorial Button
+        # Tutorial
         self.btn_help = QPushButton("?")
         self.btn_help.setFixedSize(30, 30)
         self.btn_help.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_help.setToolTip("Replay Tutorial")
-        # Force start_tutorial to run regardless of 'first_run' setting
         self.btn_help.clicked.connect(self.start_tutorial)
         top.addWidget(self.btn_help)
-        
         top.addStretch()
         
-        # Queue Monitor (Right-aligned in Top Bar)
+        # Queue Monitor
         self.queue_monitor = QueueMonitorWidget()
         top.addWidget(self.queue_monitor)
-        
         self.content_layout.addLayout(top)
         self.content_layout.addStretch()
         
@@ -162,8 +162,6 @@ class WordDisplay(QMainWindow):
 
         # --- Navigation Bar ---
         nav = QHBoxLayout()
-        
-        # Page tracker
         nav.addWidget(QLabel("Page:"))
         self.page_spin = QSpinBox()
         self.page_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
@@ -173,12 +171,9 @@ class WordDisplay(QMainWindow):
         self.page_spin.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.page_spin.editingFinished.connect(self.jump_to_page_input) 
         nav.addWidget(self.page_spin)
-
         self.lbl_total_pages = QLabel("/ --")
         nav.addWidget(self.lbl_total_pages)
-        
         nav.addSpacing(20)
-        
         nav.addWidget(QLabel("Jump %:"))
         self.pct_spin = QSpinBox()
         self.pct_spin.setRange(0, 100)
@@ -188,7 +183,6 @@ class WordDisplay(QMainWindow):
         self.pct_btn.clicked.connect(self.jump_to_percentage)
         nav.addWidget(self.pct_spin)
         nav.addWidget(self.pct_btn)
-        
         nav.addStretch()
         
         # Footnotes Button
@@ -203,15 +197,11 @@ class WordDisplay(QMainWindow):
         self.btn_footnote.clicked.connect(self.toggle_footnote_view)
         self.btn_footnote.setEnabled(False)
         nav.addWidget(self.btn_footnote)
-        
         self.content_layout.addLayout(nav)
 
         # --- Controls Bar ---
         controls = QHBoxLayout()
-        
-        # Store layout for tutorial highlighting later
         self.speed_controls_layout = controls
-        
         controls.addWidget(QLabel("Speed:"))
         self.wpm_label = QLabel(f"{self.wpm}")
         self.wpm_spin = QSpinBox()
@@ -223,7 +213,6 @@ class WordDisplay(QMainWindow):
         self.wpm_spin.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.wpm_spin.valueChanged.connect(self.update_speed_from_spinbox)
         controls.addWidget(self.wpm_spin)
-        
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(60, 1000)
         self.slider.setValue(self.wpm)
@@ -231,9 +220,7 @@ class WordDisplay(QMainWindow):
         self.slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.slider.valueChanged.connect(self.update_speed_from_slider)
         controls.addWidget(self.slider, stretch=1) # Allow expansion
-        
         controls.addSpacing(10)
-        
         self.display_controls_container = QWidget()
         dc_layout = QHBoxLayout()
         dc_layout.setContentsMargins(0, 0, 0, 0)
@@ -247,7 +234,6 @@ class WordDisplay(QMainWindow):
         self.op_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.op_slider.valueChanged.connect(self.update_opacity)
         dc_layout.addWidget(self.op_slider, stretch=1)
-        
         dc_layout.addSpacing(15)
 
         # 2. Flank Slider
@@ -259,7 +245,6 @@ class WordDisplay(QMainWindow):
         self.flank_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.flank_slider.valueChanged.connect(self.update_flank_opacity)
         dc_layout.addWidget(self.flank_slider, stretch=1)
-
         dc_layout.addSpacing(15)
 
         # 3. Range Slider
@@ -270,28 +255,19 @@ class WordDisplay(QMainWindow):
         self.ctx_slider.setMinimumWidth(80) # Prevent collapse
         self.ctx_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.ctx_slider.valueChanged.connect(self.update_ctx_range)
-        dc_layout.addWidget(self.ctx_slider, stretch=1)
-        
+        dc_layout.addWidget(self.ctx_slider, stretch=1)        
         self.display_controls_container.setLayout(dc_layout)
-        
-        # Add container with higher stretch (3) so it gets 3x the space of the WPM slider (1)
-        controls.addWidget(self.display_controls_container, stretch=3)
-        
-        controls.addSpacing(10)
-        
+        controls.addWidget(self.display_controls_container, stretch=3)        
+        controls.addSpacing(10)        
         self.btn_pauses = QPushButton("Pauses")
         self.btn_pauses.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_pauses.clicked.connect(self.open_pause_settings)
         controls.addWidget(self.btn_pauses)
-
         self.btn_ai_settings = QPushButton("AI Settings")
         self.btn_ai_settings.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_ai_settings.clicked.connect(self.open_ai_settings)
         controls.addWidget(self.btn_ai_settings)
-
-        # Removed 'controls.addStretch()' from the end so items fill the width
-        self.content_layout.addLayout(controls)
-        
+        self.content_layout.addLayout(controls)        
         self.content_widget.setLayout(self.content_layout)
         self.main_layout.addWidget(self.content_widget)
         
@@ -303,10 +279,8 @@ class WordDisplay(QMainWindow):
         # Queue Monitor connections
         self.ai_worker.queue_updated.connect(self.queue_monitor.update_queue_list)
         self.ai_worker.processing_started.connect(self.queue_monitor.set_processing)
-        self.ai_worker.processing_finished.connect(self.queue_monitor.set_idle)
-        
-        self.ai_worker.start() 
-        
+        self.ai_worker.processing_finished.connect(self.queue_monitor.set_idle)        
+        self.ai_worker.start()         
         self.ai_panel = AIQuestionPanel(self.central_widget)
         self.entity_panel = EntityPanel(self.central_widget)
         
@@ -324,7 +298,7 @@ class WordDisplay(QMainWindow):
 
         # --- TUTORIAL CHECK ---
         if self.settings.get("first_run", False):
-            # Defer execution until window is fully rendered
+            # Wait for full render
             QTimer.singleShot(500, self.start_tutorial)
 
     def start_tutorial(self):
@@ -336,14 +310,15 @@ class WordDisplay(QMainWindow):
             (self.btn_open, "Start here! Click 'Open Book' to load an EPUB or PDF."),
             (self.sidebar, "This sidebar displays chapters. Click any chapter to jump directly to it."),
             (self.btn_menu, "Need more space? Click 'List' to toggle the chapter sidebar visibility."),
-            (self.queue_monitor, "This is the AI Queue Monitor. It provides extra information when about when AI is processing requests."),
+            (self.queue_monitor, "This is the AI Queue Monitor. It provides extra information about when AI is processing requests."),
             (self.page_spin, "Know the exact page? Type it here to jump instantly."),
             (self.pct_btn, "Or use the percentage jump to navigate through the book."),
             (self.btn_footnote, "If a page has footnotes, this button lights up. Click to read them without losing your place."),
             (self.slider, "Speed Control (WPM). Use Up/Down arrow keys while reading to adjust this on the fly."),
             (self.display_controls_container, "Customize your view.\nContext: Context visibility.\nFlank: Side-word visibility.\nRange: How much context to show."),
             (self.btn_pauses, "Smart Pauses: Configure how long the reader pauses on commas, periods, and headers."),
-            (self.btn_ai_settings, "Configure your local LLM (Ollama) or adjust how often the AI reads the text for context.")
+            (self.btn_ai_settings, "Configure your local LLM (Ollama) or adjust how often the AI reads the text for context."),
+            (None, "HOTKEYS") # Triggers the graphical hotkey layout
         ]
         
         self.tutorial = TutorialOverlay(self.central_widget, steps)
@@ -357,28 +332,23 @@ class WordDisplay(QMainWindow):
     def update_overlay_positions(self):
         """Recalculates positions for the floating panels based on current layout."""
         if not hasattr(self, 'h_line'): return
-        
-        # This margin must match the padding in ContextFlowWidget.paintEvent
-        # (border_padding=20) + (line_inset=10) = 30
+
+        # Unfortunatate code smell
         VISUAL_MARGIN = 30
         
-        # Get line positions relative to the central widget
         line_pos = self.h_line.mapTo(self.central_widget, QPoint(0,0))
         global_line_pos = self.h_line.mapToGlobal(QPoint(0,0))
         
-        # 1. AI Panel (Right Side)
+        # AI Panel 
         if hasattr(self, 'ai_panel'):
             pw = self.ai_panel.width()
             # Align right edge of panel with right end of separator line
             target_x = self.central_widget.width() - pw - VISUAL_MARGIN
             self.ai_panel.place_panel(target_x, line_pos.y(), global_line_pos.y())
         
-        # 2. Entity Panel (Left Side)
+        # Entity Panel
         if hasattr(self, 'entity_panel'):
-            # Calculate where the Content Area starts (Sidebar width or 0)
             content_start_x = self.sidebar.width() if self.sidebar.isVisible() else 0
-            
-            # Align left edge of panel with left end of separator line
             target_x = content_start_x + VISUAL_MARGIN
             
             self.entity_panel.place_panel(target_x, line_pos.y())
@@ -406,7 +376,6 @@ class WordDisplay(QMainWindow):
     
         elif task_type == "CHECK_ANSWER":
             tab_id = metadata.get("tab_id")
-            # Route specifically to the tab that asked
             self.ai_panel.deliver_feedback(tab_id, response)
     
     def resizeEvent(self, event):
@@ -422,7 +391,6 @@ class WordDisplay(QMainWindow):
         new_state = not self.sidebar.isVisible()
         self.sidebar.setVisible(new_state)
         
-        # Wait for the layout to refresh, then move the panels
         QTimer.singleShot(0, self.update_overlay_positions)
     
     def open_file_dialog(self):
@@ -458,9 +426,7 @@ class WordDisplay(QMainWindow):
         self.page_map = page_map
         self.footnotes = footnotes
         self.file_path = file_path
-        
-        # Prepare Page Lookup Data (Sorted keys for binary search)
-        # page_map is { page_num: word_index }
+    
         if self.page_map:
             self.page_nums = sorted(self.page_map.keys())
             self.page_starts = [self.page_map[p] for p in self.page_nums]
@@ -497,7 +463,7 @@ class WordDisplay(QMainWindow):
         was_running = self.is_running
         if was_running: self.toggle_reading()
         
-        # Pass the imported PAUSE_CONFIG
+        # Pass PAUSE_CONFIG
         dlg = PauseSettingsDialog(self.settings, PAUSE_CONFIG, self)
         
         if dlg.exec():
@@ -510,7 +476,6 @@ class WordDisplay(QMainWindow):
         self.setFocus()
         
     def open_ai_settings(self):
-        # --- Pause if running ---
         if self.is_running:
             self.toggle_reading()
 
@@ -651,10 +616,9 @@ class WordDisplay(QMainWindow):
     def closeEvent(self, e):
         self.persist_state()
         
-        # Gracefully stop the infinite loop
         if hasattr(self, 'ai_worker'):
             self.ai_worker.stop()
-            self.ai_worker.wait(2000) # Wait up to 2s for it to finish current job
+            self.ai_worker.wait(2000)
             
         e.accept()
 
@@ -691,7 +655,6 @@ class WordDisplay(QMainWindow):
     def update_speed_from_slider(self):
         """Called when user drags the slider"""
         self.wpm = self.slider.value()
-        # Block signals to prevent feedback loop (Spinbox -> Slider -> Spinbox...)
         self.wpm_spin.blockSignals(True)
         self.wpm_spin.setValue(self.wpm)
         self.wpm_spin.blockSignals(False)
@@ -699,7 +662,6 @@ class WordDisplay(QMainWindow):
     def update_speed_from_spinbox(self):
         """Called when user types in the box"""
         self.wpm = self.wpm_spin.value()
-        # Block signals to prevent feedback loop
         self.slider.blockSignals(True)
         self.slider.setValue(self.wpm)
         self.slider.blockSignals(False)
@@ -714,7 +676,6 @@ class WordDisplay(QMainWindow):
         self.setFocus()
     
     def jump_to_page_input(self):
-        # Called when user edits the Page Spinbox
         if not self.words or not self.page_map: return
         
         target_page = self.page_spin.value()
@@ -733,14 +694,11 @@ class WordDisplay(QMainWindow):
         if idx > 0:
             current_page = self.page_nums[idx - 1]
             
-            # Optimization check
             if self.page_spin.value() != current_page:
                 self.page_spin.blockSignals(True)
                 self.page_spin.setValue(current_page)
                 self.page_spin.blockSignals(False)
 
-            # --- FOOTNOTE CHECK ---
-            # Check if this page has footnotes
             if current_page in self.footnotes:
                 self.btn_footnote.setEnabled(True)
                 self.btn_footnote.setStyleSheet("""

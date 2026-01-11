@@ -60,7 +60,7 @@ class BookLoader(QThread):
             blocks = page_dict.get("blocks", [])
             page_height = page.rect.height
             
-            # 1. Determine Body Font Size
+            # Done by font size
             font_sizes = {}
             for b in blocks:
                 if b['type'] != 0: continue 
@@ -108,11 +108,9 @@ class BookLoader(QThread):
                 else:
                     main_text_blocks.append(full_block_text)
             
-            # --- STORAGE ---
             if footnote_blocks:
                 footnotes_map[page_num] = "\n\n".join(footnote_blocks)
 
-            # Assemble ONLY main text
             full_page_text = " ".join(main_text_blocks)
             full_page_text = normalize_text(full_page_text)
             
@@ -121,7 +119,6 @@ class BookLoader(QThread):
             words_list.extend(processed_words)
             current_word_count += len(processed_words)
 
-        # TOC Handling
         toc = doc.get_toc()
         for item in toc:
             if len(item) >= 3:

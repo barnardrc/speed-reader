@@ -1,15 +1,15 @@
+# -*- coding: utf-8 -*-
 """
+Created on Sat Jan 10 20:42:08 2026
 
+@author: barna
 """
-
-# utils/settings.py
 import json
 import os
 from utils.dependents import HardwareMonitor
 
 SETTINGS_FILE = "speed_reader_settings.json"
 
-# Moved here from main file
 PAUSE_CONFIG = {
     "period":      (2.0, "End of Sentence (. ? !):"),
     "comma":       (1.5, "Comma (, : ;):"),
@@ -38,7 +38,6 @@ DEFAULT_SETTINGS = {
     "books": {}
 }
 
-# Inject Pause Defaults into the main dictionary
 for key, (val, _) in PAUSE_CONFIG.items():
     DEFAULT_SETTINGS[f"{key}_delay"] = val
 
@@ -49,7 +48,6 @@ def load_settings():
     try:
         with open(SETTINGS_FILE, "r") as f:
             settings = json.load(f)
-            # Merge defaults to handle updates/missing keys
             for key, val in DEFAULT_SETTINGS.items():
                 if key not in settings:
                     settings[key] = val

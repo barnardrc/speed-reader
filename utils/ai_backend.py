@@ -1,4 +1,9 @@
-# utils/ai_backend.py
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Jan 10 20:42:08 2026
+
+@author: barna
+"""
 import socket
 import requests
 
@@ -6,7 +11,7 @@ class AIBackendManager:
     def __init__(self, settings_dict):
         self.settings = settings_dict
         
-        # Load settings or defaults
+        # Load settings
         self.backend_type = self.settings.get("ai_backend_type", "ollama")
         self.ollama_url = self.settings.get("ollama_url", "http://localhost:11434")
         self.selected_model = self.settings.get("ai_model", "llama3")
@@ -33,7 +38,7 @@ class AIBackendManager:
         return False, "Unknown Backend"
 
     def _check_ollama(self):
-        # 1. Quick Port Check
+        # Quick Port Check
         host = self.ollama_url.replace("http://", "").replace("https://", "").split(":")[0]
         port = 11434
         try:
@@ -43,7 +48,7 @@ class AIBackendManager:
             self.is_connected = False
             return False, f"Ollama unreachable at {host}:{port}"
 
-        # 2. Fetch Models (API Check)
+        # Fetch Models (API Check)
         try:
             response = requests.get(f"{self.ollama_url}/api/tags", timeout=2)
             if response.status_code == 200:
@@ -57,6 +62,7 @@ class AIBackendManager:
                     self.selected_model = self.available_models[0]
                 
                 return True, "Ollama Connected"
+            
         except Exception as e:
             pass
         
