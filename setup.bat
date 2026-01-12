@@ -22,4 +22,5 @@ if %errorlevel% equ 0 (
 :: 3. Failure
 echo Error: Neither a working Python installation nor Conda were found.
 echo Note: If Python is installed, ensure it is added to your system PATH.
+echo If you are using Conda, run the setup script from Anaconda Prompt.
 pause
