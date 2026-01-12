@@ -173,6 +173,16 @@ def create_venv_and_install():
 
     return py_path
 
+def download_progress(count, block_size, total_size):
+    """
+    Callback function to display download progress.
+    """
+    percent = int(count * block_size * 100 / total_size)
+    # limit to 100% to avoid overflow visual
+    if percent > 100: percent = 100
+    sys.stdout.write(f"\r    - Downloading... {percent}%")
+    sys.stdout.flush()
+
 def check_and_install_ollama():
     """Checks for Ollama, installs if missing, and waits for service availability."""
     if shutil.which("ollama"):
@@ -186,9 +196,14 @@ def check_and_install_ollama():
     try:
         if system == "Windows":
             installer = "OllamaSetup.exe"
-            print("[+] Downloading Ollama...")
-            urllib.request.urlretrieve("https://ollama.com/download/OllamaSetup.exe", installer)
-            print("[+] Running installer (User intervention required)...")
+            print("[+] Downloading Ollama installer...")
+            # Added reporthook for progress bar
+            urllib.request.urlretrieve(
+                "https://ollama.com/download/OllamaSetup.exe", 
+                installer, 
+                reporthook=download_progress
+            )
+            print("\n[+] Running installer (Please complete the setup wizard)...")
             subprocess.run([installer], check=True)
             if os.path.exists(installer): os.remove(installer)
 
@@ -197,11 +212,12 @@ def check_and_install_ollama():
                 print("[!] Error: 'curl' is required.")
                 return False
             
-            print("[+] Running install script (May prompt for sudo password)...")
+            print("[+] Running install script...")
+            # Removed '-s' (silent) so curl shows its own progress bar
             # shell=True is required for piping curl to sh
-            subprocess.run("curl -fsSL https://ollama.com/install.sh | sh", shell=True, check=True)
+            subprocess.run("curl -fL https://ollama.com/install.sh | sh", shell=True, check=True)
         
-        print("[*] Waiting for Ollama service to start...")
+        print("\n[*] Waiting for Ollama service to start...")
         for _ in range(10): # Wait up to 20 seconds
             try:
                 urllib.request.urlopen("http://localhost:11434", timeout=1)
@@ -214,7 +230,7 @@ def check_and_install_ollama():
         return True
 
     except Exception as e:
-        print(f"[!] Installation failed: {e}")
+        print(f"\n[!] Installation failed: {e}")
         return False
 
 def ensure_ollama_service():
