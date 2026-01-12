@@ -11,7 +11,6 @@ import winreg
 import ctypes.util
 import json
 
-# --- Configuration ---
 REQUIREMENTS_FILE = "requirements.txt"
 HARDWARE_MONITOR_MODULE = "utils.dependents" 
 MAIN_ENTRY_POINT = "main.py" 
@@ -19,21 +18,18 @@ MAIN_ENTRY_POINT = "main.py"
 def get_venv_paths(venv_dir):
     """
     Robustly determines executable paths based on OS and directory structure.
-    Does not assume a specific layout (Scripts vs bin) without checking.
     """
     if platform.system() == "Windows":
-        # Check for standard venv layout
         python_candidates = [
             os.path.join(venv_dir, "Scripts", "python.exe"),
-            os.path.join(venv_dir, "python.exe"),  # Conda style
+            os.path.join(venv_dir, "python.exe"), 
         ]
         pip_candidates = [
             os.path.join(venv_dir, "Scripts", "pip.exe"),
             os.path.join(venv_dir, "Scripts", "pip3.exe"),
-            os.path.join(venv_dir, "Library", "bin", "pip.exe"), # Some conda layouts
+            os.path.join(venv_dir, "Library", "bin", "pip.exe"),
         ]
     else:
-        # Linux/Unix
         python_candidates = [
             os.path.join(venv_dir, "bin", "python"),
             os.path.join(venv_dir, "bin", "python3"),
@@ -43,135 +39,10 @@ def get_venv_paths(venv_dir):
             os.path.join(venv_dir, "bin", "pip3"),
         ]
 
-    # Find valid python
     py_path = next((p for p in python_candidates if os.path.exists(p)), None)
-    # Find valid pip
     pip_path = next((p for p in pip_candidates if os.path.exists(p)), None)
 
     return py_path, pip_path
-
-def check_system_dependencies():
-    """
-    Checks for OS-specific dependencies and essential tools.
-    """
-    system = platform.system()
-    
-    # --- 1. Windows: Visual C++ Redistributable ---
-    if system == "Windows":
-        print("[*] Checking system dependencies...")
-        
-        is_64bits = sys.maxsize > 2**32
-        arch_key = "x64" if is_64bits else "x86"
-        key_path = f"SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\{arch_key}"
-        
-        try:
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path, 0, winreg.KEY_READ)
-            installed, _ = winreg.QueryValueEx(key, "Installed")
-            winreg.CloseKey(key)
-            
-            if installed == 1:
-                print(f"    - Visual C++ Redistributable ({arch_key}) detected.")
-                return True
-        except OSError:
-            pass 
-
-        print(f"\n[!] MISSING DEPENDENCY: Visual C++ Redistributable ({arch_key})")
-        print("    Required for binaries (PyQt, Numpy, etc).")
-        
-        url = "https://aka.ms/vs/17/release/vc_redist.x64.exe" if is_64bits \
-              else "https://aka.ms/vs/17/release/vc_redist.x86.exe"
-
-        if input("    Open download page? (y/n): ").strip().lower() == 'y':
-            webbrowser.open(url)
-            print("    Install and restart this script.")
-            sys.exit(1)
-        return False
-
-    # --- 2. Linux: System Libraries & Tools ---
-    elif system == "Linux":
-        print("[*] Checking Linux system dependencies...")
-        
-        # Check for 'curl' (Required for Ollama install)
-        if not shutil.which("curl"):
-            print("[!] CRITICAL: 'curl' is missing.")
-            print("    Please install it: sudo apt install curl (or equivalent)")
-            sys.exit(1)
-
-        # Check for 'libxcb' (Required for PyQt6)
-        if not ctypes.util.find_library("xcb"):
-            print("\n[!] CRITICAL: 'libxcb' missing.")
-            print("    PyQt6 requires this library to render windows.")
-            print("    Run: sudo apt install libxcb-xinerama0 (Debian/Ubuntu)")
-            if input("    Continue anyway? (y/n): ").strip().lower() != 'y':
-                sys.exit(1)
-            return False
-            
-        print("    - Dependencies (curl, libxcb) detected.")
-        return True
-
-    # --- 3. macOS: Essential Tools ---
-    elif system == "Darwin":
-        # macOS handles PyQt6 libraries automatically, but we still need curl.
-        if not shutil.which("curl"):
-            print("[!] CRITICAL: 'curl' is missing.")
-            print("    This is unusual for macOS. Ensure Command Line Tools are installed.")
-            print("    Run: xcode-select --install")
-            sys.exit(1)
-        return True
-
-    return True
-
-def create_venv_and_install():
-    venv_dir = os.path.join(os.getcwd(), "venv")
-    
-    # 1. Create Environment
-    if not os.path.exists(venv_dir):
-        print(f"[+] Creating virtual environment in {venv_dir}...")
-        
-        # Check if running in Conda and Conda is available
-        # Note: We use the CURRENT python version to ensure compatibility
-        if "conda" in sys.version.lower() and shutil.which("conda"):
-            print("    - Conda detected. Creating isolated conda env...")
-            current_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
-            try:
-                subprocess.check_call([
-                    "conda", "create", "-p", venv_dir, 
-                    f"python={current_ver}", "-y"
-                ])
-            except subprocess.CalledProcessError:
-                print("    - Conda failed. Falling back to standard venv.")
-                subprocess.check_call([sys.executable, "-m", "venv", "venv"])
-        else:
-            subprocess.check_call([sys.executable, "-m", "venv", "venv"])
-    else:
-        print("[*] Virtual environment exists.")
-
-    # 2. Locate Binaries
-    py_path, pip_path = get_venv_paths(venv_dir)
-    
-    if not py_path or not pip_path:
-        print("[!] Error: Created venv but could not find Python/Pip executables.")
-        print(f"    Searched in: {venv_dir}")
-        sys.exit(1)
-
-    # 3. Install Requirements
-    if os.path.exists(REQUIREMENTS_FILE):
-        print("[+] Installing dependencies...")
-        # Clean environment to prevent leaking global packages into venv
-        env = os.environ.copy()
-        env.pop("PYTHONPATH", None)
-        
-        try:
-            # Use python -m pip to avoid shebang/path length issues on Windows
-            subprocess.check_call(
-                [py_path, "-m", "pip", "install", "-r", REQUIREMENTS_FILE],
-                env=env
-            )
-        except subprocess.CalledProcessError:
-            print("[!] Failed to install requirements.")
-            sys.exit(1)
-
-    return py_path
 
 def download_progress(count, block_size, total_size):
     """
@@ -182,8 +53,94 @@ def download_progress(count, block_size, total_size):
     sys.stdout.write(f"\r    - Downloading... {percent}%")
     sys.stdout.flush()
 
+def check_system_dependencies():
+    system = platform.system()
+    
+    if system == "Windows":
+        print("[*] Checking system dependencies...")
+        is_64bits = sys.maxsize > 2**32
+        arch_key = "x64" if is_64bits else "x86"
+        key_path = f"SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\{arch_key}"
+        
+        try:
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path, 0, winreg.KEY_READ)
+            installed, _ = winreg.QueryValueEx(key, "Installed")
+            winreg.CloseKey(key)
+            if installed == 1:
+                return True
+        except OSError:
+            pass 
+
+        print(f"\n[!] MISSING DEPENDENCY: Visual C++ Redistributable ({arch_key})")
+        url = "https://aka.ms/vs/17/release/vc_redist.x64.exe" if is_64bits \
+              else "https://aka.ms/vs/17/release/vc_redist.x86.exe"
+        if input("    Open download page? (y/n): ").strip().lower() == 'y':
+            webbrowser.open(url)
+            sys.exit(1)
+        return False
+
+    elif system == "Linux":
+        print("[*] Checking Linux system dependencies...")
+        if not shutil.which("curl"):
+            print("[!] CRITICAL: 'curl' is missing.")
+            sys.exit(1)
+
+        if not ctypes.util.find_library("xcb"):
+            print("\n[!] CRITICAL: 'libxcb' missing.")
+            if input("    Continue anyway? (y/n): ").strip().lower() != 'y':
+                sys.exit(1)
+        return True
+
+    elif system == "Darwin":
+        if not shutil.which("curl"):
+            print("[!] CRITICAL: 'curl' is missing (Install Xcode Command Line Tools).")
+            sys.exit(1)
+        return True
+
+    return True
+
+def create_venv_and_install():
+    venv_dir = os.path.join(os.getcwd(), "venv")
+    
+    if not os.path.exists(venv_dir):
+        print(f"[+] Creating virtual environment in {venv_dir}...")
+        if "conda" in sys.version.lower() and shutil.which("conda"):
+            print("    - Conda detected. Creating isolated conda env...")
+            current_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
+            try:
+                subprocess.check_call([
+                    "conda", "create", "-p", venv_dir, 
+                    f"python={current_ver}", "-y"
+                ])
+            except subprocess.CalledProcessError:
+                subprocess.check_call([sys.executable, "-m", "venv", "venv"])
+        else:
+            subprocess.check_call([sys.executable, "-m", "venv", "venv"])
+    else:
+        print("[*] Virtual environment exists.")
+
+    py_path, pip_path = get_venv_paths(venv_dir)
+    
+    if not py_path or not pip_path:
+        print("[!] Error: Created venv but could not find Python/Pip executables.")
+        sys.exit(1)
+
+    if os.path.exists(REQUIREMENTS_FILE):
+        print("[+] Installing dependencies...")
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        try:
+            subprocess.check_call(
+                [py_path, "-m", "pip", "install", "-r", REQUIREMENTS_FILE],
+                env=env
+            )
+        except subprocess.CalledProcessError:
+            print("[!] Failed to install requirements.")
+            sys.exit(1)
+
+    return py_path
+
 def check_and_install_ollama():
-    """Checks for Ollama, installs if missing, and waits for service availability."""
     if shutil.which("ollama"):
         return True
 
@@ -195,26 +152,23 @@ def check_and_install_ollama():
     try:
         if system == "Windows":
             installer = "OllamaSetup.exe"
-            print("[+] Downloading Ollama installer...")
+            print("[+] Downloading Ollama...")
             urllib.request.urlretrieve(
                 "https://ollama.com/download/OllamaSetup.exe", 
-                installer, 
+                installer,
                 reporthook=download_progress
             )
-            print("\n[+] Running installer (Please complete the setup wizard)...")
+            print("\n[+] Running installer (User intervention required)...")
             subprocess.run([installer], check=True)
             if os.path.exists(installer): os.remove(installer)
 
         elif system in ["Linux", "Darwin"]:
-            if not shutil.which("curl"):
-                print("[!] Error: 'curl' is required.")
-                return False
-            
             print("[+] Running install script...")
+            
             subprocess.run("curl -fL https://ollama.com/install.sh | sh", shell=True, check=True)
         
-        print("\n[*] Waiting for Ollama service to start...")
-        for _ in range(10):
+        print("[*] Waiting for Ollama service to start...")
+        for _ in range(10): 
             try:
                 urllib.request.urlopen("http://localhost:11434", timeout=1)
                 print("    - Service is up.")
@@ -230,46 +184,33 @@ def check_and_install_ollama():
         return False
 
 def ensure_ollama_service():
-    """
-    Ensures the Ollama background service is running.
-    If it's down, attempts to start it and waits for a heartbeat.
-    """
     print("[*] Checking Ollama service status...")
-    
-    # 1. Try to connect to the API
     url = "http://localhost:11434"
-    for _ in range(3): # Quick check (3 attempts)
+    for _ in range(3):
         try:
             urllib.request.urlopen(url, timeout=0.5)
-            return True # Service is up
+            return True 
         except (urllib.error.URLError, ConnectionRefusedError):
             time.sleep(0.5)
 
     print("    - Service is down. Attempting to start...")
-
-    # 2. Start the service if unreachable
     try:
         if platform.system() == "Windows":
-            # Start detached process to avoid blocking the script
             subprocess.Popen(
                 ["ollama", "serve"], 
                 creationflags=subprocess.CREATE_NO_WINDOW,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
         else:
-            # Linux/Mac
             subprocess.Popen(
                 ["ollama", "serve"], 
-                stdout=subprocess.DEVNULL, 
-                stderr=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 start_new_session=True
             )
     except Exception as e:
         print(f"[!] Failed to start Ollama service: {e}")
         return False
 
-    # 3. Wait for startup (up to 20 seconds)
     print("    - Waiting for service to initialize...", end="", flush=True)
     for _ in range(20):
         try:
@@ -284,9 +225,62 @@ def ensure_ollama_service():
     print("    Please open a separate terminal and run 'ollama serve'")
     return False
 
+def initialize_model(model_tag):
+    """
+    Sends a warm-up request to load the model into memory.
+    """
+    print(f"[*] Initializing {model_tag} (Warm-up)...")
+    url = "http://localhost:11434/api/generate"
+    payload = {
+        "model": model_tag,
+        "prompt": "hi", 
+        "stream": False,
+        "keep_alive": "5m"
+    }
+    
+    try:
+        req = urllib.request.Request(
+            url, 
+            data=json.dumps(payload).encode('utf-8'), 
+            headers={'Content-Type': 'application/json'}
+        )
+        with urllib.request.urlopen(req) as response:
+            if response.status == 200:
+                print(f"    - Success: {model_tag} is ready.")
+                return True
+    except Exception as e:
+        print(f"[!] Warm-up failed: {e}")
+        return False
+
 def pull_model(py_path):
+    print("\n[?] Configuration Mode")
+    print("    1. Automatic (Analyze my hardware and recommend a local model)")
+    print("    2. Cloud (Use high-performance models via Ollama Cloud - Requires Account)")
+    
+    choice = input("    Select option (1/2): ").strip()
+
+    if choice == '2':
+        target_model = "gpt-oss:120b-cloud"
+        
+        print(f"\n[*] Setup for Cloud Model: {target_model}")
+        print("    This model runs on Ollama's servers. No local GPU required.")
+
+        print("    Authentication is required.")
+        subprocess.run(["ollama", "signin"], check=False)
+
+        print(f"    - Linking {target_model}...")
+        try:
+            subprocess.run(["ollama", "pull", target_model], check=True)
+
+            initialize_model(target_model)
+            return
+            
+        except subprocess.CalledProcessError:
+            print("[!] Failed to link cloud model. Check your account/internet.")
+            return
+
     if not os.path.exists(os.path.join("utils", "dependents.py")):
-        print("[!] Warning: utils/dependents.py not found. Skipping model detection.")
+        print("[!] Warning: utils/dependents.py not found. Skipping detection.")
         return
 
     if not ensure_ollama_service():
@@ -300,58 +294,53 @@ def pull_model(py_path):
     ]
 
     try:
-        print("\n[+] Analyzing hardware for AI compatibility...")
+        print("\n[+] Analyzing hardware for local AI compatibility...")
         output = subprocess.check_output(cmd, text=True).strip()
         data = json.loads(output)
         
         model_tag = data.get('recommended_model_tag')
-        # specific 'reason' key, or fallback to a generic string
-        hw_type = data.get('hardware_type', 'Optimized for available CPU/GPU')
-        memory = data.get('detected_memory', 'Optimized for your available VRAM/RAM') 
+        hw_type = data.get('hardware_type', 'Generic')
+        memory = data.get('detected_memory', 'Unknown') 
         
         print(f"    - HW:             {hw_type}")
         print(f"    - Memory:         {memory}")
         print(f"    - Recommendation: {model_tag}")
 
-        # Check if already installed
         result = subprocess.run(["ollama", "list"], capture_output=True, text=True)
         if model_tag in result.stdout:
             print(f"[*] Model '{model_tag}' is already installed.")
             return
 
-        # User Confirmation
-        print(f"\n    The model '{model_tag}' is required for this hardware profile.")
+        print(f"\n    The model '{model_tag}' is recommended for your hardware.")
         confirm = input(f"    Download and install now? (y/n): ").strip().lower()
         
         if confirm == 'y':
             print("    - Pulling model (This may take a while)...")
             subprocess.run(["ollama", "pull", model_tag], check=True)
             print("    - Install complete.")
+            initialize_model(model_tag)
         else:
-            print("    [!] Warning: No model installed. The application may not function correctly.")
+            print("    [!] Warning: No model installed. App may fail.")
         
     except Exception as e:
         print(f"[!] Model setup error: {e}")
-        
+
 def create_shortcuts(py_path):
     print("\n[+] Creating launch scripts...")
     system = platform.system()
     
     if system == "Windows":
-        # Dynamic search for PyQt bin to avoid hardcoded paths
-        # This handles different PyQt versions or other Qt bindings (PySide)
         venv_root = os.path.dirname(os.path.dirname(py_path))
         qt_search_path = os.path.join(venv_root, "Lib", "site-packages")
         qt_bin = None
         
-        # Look for PyQt6 specific bin
         possible_qt = os.path.join(qt_search_path, "PyQt6", "Qt6", "bin")
         if os.path.exists(possible_qt):
             qt_bin = possible_qt
 
         with open("run.bat", "w") as f:
             f.write("@echo off\n")
-            f.write("set QT_PLUGIN_PATH=\n") # Clear conflict vars
+            f.write("set QT_PLUGIN_PATH=\n")
             if qt_bin:
                 f.write(f'set "PATH={qt_bin};%PATH%"\n')
             f.write(f'"{py_path}" {MAIN_ENTRY_POINT}\n')
@@ -365,15 +354,12 @@ def create_shortcuts(py_path):
 
 def main():
     check_system_dependencies()
-    
-    # Returns the valid python executable path for future use
     venv_python = create_venv_and_install()
     
     if check_and_install_ollama():
         pull_model(venv_python)
         
     create_shortcuts(venv_python)
-    
     print("\n=== Setup Complete ===")
 
 if __name__ == "__main__":
