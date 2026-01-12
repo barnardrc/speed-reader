@@ -178,7 +178,6 @@ def download_progress(count, block_size, total_size):
     Callback function to display download progress.
     """
     percent = int(count * block_size * 100 / total_size)
-    # limit to 100% to avoid overflow visual
     if percent > 100: percent = 100
     sys.stdout.write(f"\r    - Downloading... {percent}%")
     sys.stdout.flush()
@@ -197,7 +196,6 @@ def check_and_install_ollama():
         if system == "Windows":
             installer = "OllamaSetup.exe"
             print("[+] Downloading Ollama installer...")
-            # Added reporthook for progress bar
             urllib.request.urlretrieve(
                 "https://ollama.com/download/OllamaSetup.exe", 
                 installer, 
@@ -213,12 +211,10 @@ def check_and_install_ollama():
                 return False
             
             print("[+] Running install script...")
-            # Removed '-s' (silent) so curl shows its own progress bar
-            # shell=True is required for piping curl to sh
             subprocess.run("curl -fL https://ollama.com/install.sh | sh", shell=True, check=True)
         
         print("\n[*] Waiting for Ollama service to start...")
-        for _ in range(10): # Wait up to 20 seconds
+        for _ in range(10):
             try:
                 urllib.request.urlopen("http://localhost:11434", timeout=1)
                 print("    - Service is up.")
