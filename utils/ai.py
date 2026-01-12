@@ -7,6 +7,7 @@ Created on Sat Jan 10 20:42:08 2026
 import requests
 import uuid
 import queue
+import markdown
 from PyQt6.QtCore import (QThread, pyqtSignal, Qt, QPropertyAnimation, 
                           QEasingCurve, QRect, QMutex)
 from PyQt6.QtWidgets import (
@@ -129,7 +130,7 @@ class QuestionTab(QWidget):
         self.lbl_q.setStyleSheet("color: #e0e0e0; margin-bottom: 10px; background: transparent;")
         self.layout.addWidget(self.lbl_q)
 
-        self.txt_answer = SubmitTextEdit()
+        self.txt_answer = SubmitTextEdit() 
         self.txt_answer.setPlaceholderText("Type reflection (Enter to submit)...")
         self.txt_answer.setFixedHeight(100)
         self.txt_answer.setFont(QFont("Arial", 13))
@@ -145,8 +146,15 @@ class QuestionTab(QWidget):
 
         self.txt_feedback = QTextBrowser()
         self.txt_feedback.hide()
-        self.txt_feedback.setFont(QFont("Arial", 13))
-        self.txt_feedback.setStyleSheet("QTextBrowser { background-color: rgba(34, 34, 34, 200); color: #ccc; font-style: italic; border: 1px solid #444; border-radius: 4px; padding: 5px; }")
+        self.txt_feedback.setStyleSheet("""
+            QTextBrowser { 
+                background-color: rgba(34, 34, 34, 200); 
+                color: #ccc; 
+                border: 1px solid #444; 
+                border-radius: 4px; 
+                padding: 10px; 
+            }
+        """)
         self.layout.addWidget(self.txt_feedback)
 
         self.btn_action = QPushButton("Submit Answer")
@@ -169,13 +177,15 @@ class QuestionTab(QWidget):
             f"Context: \"{self.context_text}\"\n"
             f"Question: \"{self.question_text}\"\n"
             f"User Answer: \"{user_ans}\"\n\n"
-            f"Task: Evaluate the accuracy and validity of the user's answer.\n"
-            f"Address the user directly as 'you' and avoid speaking in the third person.\n"
-            f"1. Rate the answer from 1 to 5 based on its factual correctness.\n"
-            f"2. Provide a concise explanation for the rating. Focus on whether the answer is logically sound and consistent with the context.\n"
-            f"3. Do not penalize the user for using their own perspective or for failing to quote the text, as long as the answer remains valid.\n"
-            f"4. If the rating is below 5, cite specific evidence from the context to explain the correct information.\n"
-            f"5. If the user provides a non-answer or asks a question, use the context to provide a helpful response that assists their understanding."
+            f"Task: Provide a micro-feedback summary (max 3-4 sentences) on the user's answer.\n"
+            f"Constraints: Be concise. No tables. No long paragraphs.\n"
+            f"Tone: Direct, encouraging, and brief.\n\n"
+            f"Instructions:\n"
+            f"1. Verdict First: Immediately validate if the answer is correct, partially correct, or incorrect.\n"
+            f"2. The 'One Thing': If they missed something, provide only the single most important missing fact from the context. Do not list everything.\n"
+            f"3. No Fluff: Do not use pleasantries like 'Thank you for your answer' or 'That is an interesting thought'. Jump straight to the point.\n"
+            f"4. Formatting: Use **bold** for key terms to make it skimmable.\n"
+            f"5. Closure: End with a short confirming statement. Do not ask follow-up questions."
         )
         
         self.validation_requested.emit(prompt, self.context_text, self.tab_id)
@@ -189,25 +199,43 @@ class QuestionTab(QWidget):
              self.btn_action.setEnabled(True)
              self.txt_answer.setDisabled(False)
         else:
-            self.txt_feedback.setText(response)
+            html_body = markdown.markdown(response, extensions=['tables'])
+            css_style = """
+            <style>
+                body { 
+                    font-family: Arial; 
+                    font-size: 16pt; 
+                    line-height: 1.6; 
+                    color: #ccc; 
+                }
+                p { margin-bottom: 12px; }
+                strong { color: #fff; }
+                ul { margin-bottom: 12px; margin-left: -20px; }
+            </style>
+            """
+            
+            styled_html = f"{css_style}<div>{html_body}</div>"
+            
+            self.txt_feedback.setHtml(styled_html)
+
             self.txt_feedback.show()
             self.btn_action.setText("Dismiss / Done")
             self.btn_action.setEnabled(True)
             try: self.btn_action.clicked.disconnect()
             except: pass
             self.btn_action.clicked.connect(lambda: self.closed.emit(self))
-
+            
 class AIQuestionPanel(QFrame):
     submit_task_signal = pyqtSignal(str, dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedWidth(450)
+        self.setFixedWidth(500)
         self.is_resizing = False
         self.resize_margin = 15
         self.min_height = 150
-        self.max_height = 900
-        self.current_height = 450
+        self.max_height = 1000
+        self.current_height = 600
         self.anchor_y = 0
         self.global_anchor_y = 0
         self.collapsed_height = 40

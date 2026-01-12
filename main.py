@@ -785,10 +785,13 @@ class WordDisplay(QMainWindow):
             self.read_buffer = []
         
         prompt = (
-            f"Read the following text:\n\"{text_chunk}\"\n\n"
-            f"Task: Generate a single, concise reading comprehension question based on this text. "
-            f"Focus on testing the reader's memory of specific facts or logic from this passage. "
-            f"Do not provide the answer."
+            f"Text Chunk: \n\"{text_chunk}\"\n\n"
+            f"Task: Generate one concise reading comprehension question based on the text above.\n\n"
+            f"Requirements:\n"
+            f"1. Priority: Test the reader's understanding of the central idea, cause-and-effect, or the logic behind the passage.\n"
+            f"2. Fallback: If the text is purely informational, ask about a significant factual detail.\n"
+            f"3. Constraint: Avoid asking for direct quotes or trivial formatting details. The question should require the reader to have actually processed the meaning of the text.\n"
+            f"4. Format: Provide only the question. Do not provide the answer."
         )
         
         metadata = {

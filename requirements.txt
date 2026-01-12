@@ -4,3 +4,4 @@ ebooklib
 requests
 pymupdf
 psutil
+markdown
