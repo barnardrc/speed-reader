@@ -169,11 +169,12 @@ class QuestionTab(QWidget):
             f"Context: \"{self.context_text}\"\n"
             f"Question: \"{self.question_text}\"\n"
             f"User Answer: \"{user_ans}\"\n\n"
-            f"Task: Evaluate my answer based on the provided context.\n"
-            f"If I provide a non answer or just ask a question, be helpful and assist with the provided context.\n"
-            f"1. You must rate my answer out of a total of 5.\n"
-            f"2. Follow immediately with a concise explanation citing specific evidence from the text to support your rating.\n"
-            f"3. Explain why I, if I did not, get a max rating."
+            f"Task: Evaluate the accuracy and validity of the user's answer, addressing the user specifically.\n"
+            f"1. Rate the answer from 1 to 5 based on its factual correctness.\n"
+            f"2. Provide a concise explanation for the rating. Focus on whether the answer is logically sound and consistent with the context.\n"
+            f"3. Do not penalize the user for using their own perspective or for failing to quote the text, as long as the answer remains valid.\n"
+            f"4. If the rating is below 5, cite specific evidence from the context to explain the correct information.\n"
+            f"5. If the user provides a non-answer or asks a question, use the context to provide a helpful response that assists their understanding."
         )
         
         self.validation_requested.emit(prompt, self.context_text, self.tab_id)
