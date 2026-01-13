@@ -8,6 +8,18 @@ import platform
 import subprocess
 import shutil
 
+def is_raspberry_pi():
+    """Checks if the device is a Raspberry Pi."""
+    try:
+        # Check the specific hardware model file used by Raspberry Pi OS
+        with open('/proc/device-tree/model', 'r') as f:
+            if 'raspberry pi' in f.read().lower():
+                return True
+    except FileNotFoundError:
+        pass
+        
+    return False
+
 class HardwareMonitor:
     def __init__(self):
         self.os_type = platform.system()

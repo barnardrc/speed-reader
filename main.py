@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 # Utils
+from utils.dependents import is_raspberry_pi
 from utils.style_sheet import DARK_THEME
 from utils.text_utils import is_header
 from utils.ai import SequentialAIWorker, AIQuestionPanel, EntityPanel
@@ -865,5 +866,10 @@ class WordDisplay(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = WordDisplay()
-    window.show()
+    
+    if is_raspberry_pi():
+        window.showFullScreen()
+    else:
+        window.show()
+        
     sys.exit(app.exec())
