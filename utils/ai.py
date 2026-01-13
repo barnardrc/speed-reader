@@ -130,7 +130,7 @@ class QuestionTab(QWidget):
         self.lbl_q.setStyleSheet("color: #e0e0e0; margin-bottom: 10px; background: transparent;")
         self.layout.addWidget(self.lbl_q)
 
-        self.txt_answer = SubmitTextEdit() 
+        self.txt_answer = SubmitTextEdit()
         self.txt_answer.setPlaceholderText("Type reflection (Enter to submit)...")
         self.txt_answer.setFixedHeight(100)
         self.txt_answer.setFont(QFont("Arial", 13))

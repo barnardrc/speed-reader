@@ -82,11 +82,11 @@ def _perform_first_run_setup():
     rec = monitor.get_recommendation()
     print(rec)
     # Auto-configure model based on hardware
-    if rec["can_run_70b"]:
+    if rec.get("can_run_70b", False):
         settings["ai_model"] = "llama3:70b"
-    elif rec["can_run_13b"]:
+    elif rec.get("can_run_13b", False):
         settings["ai_model"] = "mistral:latest"
-    elif rec["can_run_7b"]:
+    elif rec.get("can_run_7b", False):
         settings["ai_model"] = "llama3:8b"
     else:
         settings["ai_model"] = "tinyllama"
