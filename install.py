@@ -7,7 +7,6 @@ import urllib.request
 import time
 import stat
 import webbrowser
-import winreg 
 import ctypes.util
 import json
 
@@ -57,6 +56,7 @@ def check_system_dependencies():
     system = platform.system()
     
     if system == "Windows":
+        import winreg
         print("[*] Checking system dependencies...")
         is_64bits = sys.maxsize > 2**32
         arch_key = "x64" if is_64bits else "x86"
