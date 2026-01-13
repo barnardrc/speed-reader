@@ -7,7 +7,6 @@ import urllib.request
 import time
 import stat
 import webbrowser
-import winreg 
 import ctypes.util
 import json
 
@@ -57,6 +56,7 @@ def check_system_dependencies():
     system = platform.system()
     
     if system == "Windows":
+        import winreg
         print("[*] Checking system dependencies...")
         is_64bits = sys.maxsize > 2**32
         arch_key = "x64" if is_64bits else "x86"
@@ -104,6 +104,7 @@ def create_venv_and_install():
     
     if not os.path.exists(venv_dir):
         print(f"[+] Creating virtual environment in {venv_dir}...")
+        
         if "conda" in sys.version.lower() and shutil.which("conda"):
             print("    - Conda detected. Creating isolated conda env...")
             current_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
@@ -115,7 +116,7 @@ def create_venv_and_install():
             except subprocess.CalledProcessError:
                 subprocess.check_call([sys.executable, "-m", "venv", "venv"])
         else:
-            subprocess.check_call([sys.executable, "-m", "venv", "venv"])
+            subprocess.check_call([sys.executable, "-m", "venv", "venv", "--system-site-packages"])
     else:
         print("[*] Virtual environment exists.")
 
