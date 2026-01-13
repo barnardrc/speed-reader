@@ -104,6 +104,7 @@ def create_venv_and_install():
     
     if not os.path.exists(venv_dir):
         print(f"[+] Creating virtual environment in {venv_dir}...")
+        
         if "conda" in sys.version.lower() and shutil.which("conda"):
             print("    - Conda detected. Creating isolated conda env...")
             current_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
@@ -115,7 +116,7 @@ def create_venv_and_install():
             except subprocess.CalledProcessError:
                 subprocess.check_call([sys.executable, "-m", "venv", "venv"])
         else:
-            subprocess.check_call([sys.executable, "-m", "venv", "venv"])
+            subprocess.check_call([sys.executable, "-m", "venv", "venv", "--system-site-packages"])
     else:
         print("[*] Virtual environment exists.")
 
