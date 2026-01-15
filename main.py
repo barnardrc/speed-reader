@@ -309,51 +309,46 @@ class WordDisplay(QMainWindow):
     
     def process_eye_tracking(self):
         if not self.eye_tracker: return
-        if not self.is_running: return
-
+        
+        # 1. Get Frame
         frame = self.eye_tracker.get_frame()
-        
         if frame is None: return
-        
+
+        # Ping Indicator (Green Dot logic)
         if hasattr(self, 'cam_indicator'):
             self.cam_indicator.ping()
-            
-        frame, avg_y = self.eye_tracker.detect_pupils(frame)
+
+        # 2. Detect Pupils (Returns RATIO now)
+        frame, avg_ratio = self.eye_tracker.detect_pupils(frame)
         
-        # --- DEBUG UPDATE ---
-        if self.debug_window and self.debug_window.isVisible():
-            self.debug_window.update_frame(
-                frame, 
-                avg_y, 
-                self.eye_tracker.baseline_y, 
-                self.eye_tracker.threshold_buffer
-            )
-        
-        if self.calibration_requested and avg_y is not None:
-            self.eye_tracker.calibrate(avg_y)
+        # 3. Calibration
+        if self.calibration_requested and avg_ratio is not None:
+            self.eye_tracker.calibrate(avg_ratio)
             self.calibration_requested = False
             
-            # --- TUTORIAL INTERACTION ---
+            # Tutorial Auto-Advance
             if hasattr(self, 'tutorial') and self.tutorial.isVisible():
-                # If we are on the Calibration step, auto-advance!
                 current_msg = self.tutorial.steps[self.tutorial.current_step][1]
                 if current_msg == "EYE_CALIB":
                     self.tutorial.next_step()
-                    # Force a temporary pause so they can read the next instruction
                     if self.is_running: self.toggle_reading()
-            
-        eyes_off, _ = self.eye_tracker.check_gaze(avg_y)
+
+        # 4. Check Gaze
+        eyes_off, limit_ratio = self.eye_tracker.check_gaze(avg_ratio)
         
+        # 5. Update Debug Window (Pass Ratios)
+        if self.debug_window and self.debug_window.isVisible():
+            self.debug_window.update_frame(frame, avg_ratio, limit_ratio, eyes_off)
+
+        # 6. Logic Control
         if eyes_off:
             if not self.is_gaze_paused:
                 self.is_gaze_paused = True
-                print("Gaze lost - Pausing")
-                self.rsvp_display.set_status(2) # 2 = Orange
+                self.rsvp_display.set_status(2) # Orange
         else:
             if self.is_gaze_paused:
                 self.is_gaze_paused = False
-                print("Gaze found - Resuming")
-                self.rsvp_display.set_status(1) # 1 = Green
+                self.rsvp_display.set_status(1) # Green
                 self.schedule_next_word()
     
     def check_sidebar_mode(self):
