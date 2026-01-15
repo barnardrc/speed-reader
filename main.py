@@ -83,14 +83,38 @@ class WordDisplay(QMainWindow):
         # --- Sidebar ---
         self.sidebar = QWidget()
         self.sidebar.setFixedWidth(200)
+        # Ensure it has a background so text underneath doesn't show through in overlay mode
         self.sidebar.setStyleSheet("background-color: #2b2b2b; border-right: 1px solid #444;")
+        
         self.sidebar_layout = QVBoxLayout()
-        self.sidebar_layout.addWidget(QLabel("  Chapters"))
+        self.sidebar_layout.setContentsMargins(5, 10, 5, 5) # Add margins
+        
+        # -- Sidebar Header --
+        sidebar_header = QHBoxLayout()
+        lbl_chap = QLabel("  Chapters")
+        lbl_chap.setStyleSheet("font-weight: bold; color: #aaa;")
+        sidebar_header.addWidget(lbl_chap)
+        
+        sidebar_header.addStretch()
+        
+        # The new Close Button
+        self.btn_close_sidebar = QPushButton("✕")
+        self.btn_close_sidebar.setFixedSize(30, 30)
+        self.btn_close_sidebar.setStyleSheet("color: #aaa; border: none; font-weight: bold;")
+        self.btn_close_sidebar.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_close_sidebar.clicked.connect(self.toggle_sidebar)
+        sidebar_header.addWidget(self.btn_close_sidebar)
+        
+        self.sidebar_layout.addLayout(sidebar_header)
+        # --------------------
+
         self.chapter_list = QListWidget()
         self.chapter_list.setFrameShape(QFrame.Shape.NoFrame)
         self.chapter_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.chapter_list.setStyleSheet("background: transparent;") # Match new background
         self.chapter_list.itemClicked.connect(self.on_chapter_clicked)
         self.sidebar_layout.addWidget(self.chapter_list)
+        
         self.sidebar.setLayout(self.sidebar_layout)
 
         # --- Content Area ---
@@ -609,6 +633,11 @@ class WordDisplay(QMainWindow):
         self.entity_buffer = []
         self.update_display_manual()
         if self.is_running: self.schedule_next_word()
+        
+        # FIX: Auto-close sidebar on mobile/overlay mode
+        if self.width() < 750:
+             self.toggle_sidebar()
+             
         self.setFocus()
 
     def keyPressEvent(self, e):
