@@ -1,6 +1,6 @@
 # speed-reader
 
-A speed reading application powered by local AI.
+A speed reading application powered by local AI. Experimental eye tracking.
 #### Into to RSVP
 [How Fast Can You Read? - Speed Reading Challenge: *by Buffed, YouTube](https://www.youtube.com/watch?v=NdKcDPBQ-Lw)
 #### De-DRM Guide
@@ -57,6 +57,7 @@ python main.py
 source venv/bin/activate
 python main.py
 ```
+
 
 
 
