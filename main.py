@@ -613,6 +613,12 @@ class WordDisplay(QMainWindow):
         elif self.childAt(e.pos()) not in ignore_widgets:
             self.setFocus()
             self.toggle_reading()
+            
+    def mouseDoubleClickEvent(self, e):
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
 
     def closeEvent(self, e):
         self.persist_state()
