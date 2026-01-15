@@ -6,7 +6,7 @@ Created on Thu Jan 15 01:37:24 2026
 """
 
 from PyQt6.QtCore import QThread, pyqtSignal
-from utils.eye_tracker import EyeTracker
+from utils.eye_tracking.eye_tracker import EyeTracker
 
 class EyeTrackingWorker(QThread):
     # Signal: (Frame, Ratio, EyesOff, Limit)
