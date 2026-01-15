@@ -189,12 +189,23 @@ class WordDisplay(QMainWindow):
         # --- RSVP Display ---
         self.display_container = QWidget()
         self.display_layout = QVBoxLayout()
+        
         self.context_display = ContextFlowWidget()
         self.context_display.scrolled.connect(self.on_context_scroll)
         self.display_layout.addWidget(self.context_display, stretch=1)
+
+        # --- MODIFICATION START ---
+        # Insert a strong spacer here to push the RSVP widget to the bottom.
+        # This creates the physical gap needed for the eye tracker to distinct 
+        # between looking "UP" (Context) and looking "DOWN" (Reading).
+        if is_raspberry_pi():
+            self.display_layout.addStretch(5) 
+        # --------------------------
+
         self.rsvp_display = RSVPWidget()
         self.rsvp_display.set_flank_opacity(self.flank_opacity)
         self.display_layout.addWidget(self.rsvp_display, stretch=1)
+        
         self.display_container.setLayout(self.display_layout)
         self.content_layout.addWidget(self.display_container, stretch=2) 
         self.content_layout.addStretch()
