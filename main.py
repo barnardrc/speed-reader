@@ -440,16 +440,14 @@ class WordDisplay(QMainWindow):
         QTimer.singleShot(0, self.update_overlay_positions)
     
     def open_file_dialog(self):
-        # 1. Capture state
-        was_fullscreen = self.isFullScreen()
+        self.intended_fullscreen = self.isFullScreen()
 
         if self.file_path: self.persist_state()
         if self.is_running: self.toggle_reading()
         
         file_path, _ = QFileDialog.getOpenFileName(self, "Open Book", "", "Books (*.epub *.pdf);;EPUB Files (*.epub);;PDF Files (*.pdf)")
         
-        # 2. Restore state immediately after dialog closes
-        if was_fullscreen:
+        if self.intended_fullscreen:
             self.showFullScreen()
 
         if file_path: self.load_book(os.path.abspath(file_path))
@@ -469,6 +467,9 @@ class WordDisplay(QMainWindow):
     def reset_loading_ui(self):
         self.loading_container.setVisible(False)
         self.setFocus()
+        
+        if getattr(self, 'intended_fullscreen', False):
+            self.showFullScreen()
 
     def on_book_loaded(self, words, chapters, page_map, footnotes, file_path):
         if not words:
