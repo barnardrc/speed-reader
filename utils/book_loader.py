@@ -7,7 +7,7 @@ Created on Sat Jan 10 11:27:42 2026
 
 # utils/book_loader.py
 import os
-import fitz  # PyMuPDF
+import fitz
 import zipfile
 import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup

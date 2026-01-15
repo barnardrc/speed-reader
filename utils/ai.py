@@ -207,7 +207,7 @@ class AIQuestionPanel(QFrame):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedWidth(500) # Default, but user can resize
+        self.setFixedWidth(500)
         self.current_height = 500
         self.collapsed_height = 40
         self.is_expanded = False
@@ -226,19 +226,19 @@ class AIQuestionPanel(QFrame):
         self.main_layout.setSpacing(0)
         self.setLayout(self.main_layout)
 
-        # --- Content Container (Hidden when collapsed) ---
+        # --- Content Container ---
         self.content_container = QWidget()
         self.content_container.setStyleSheet("background-color: rgba(30, 30, 30, 240); border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;")
         
-        # Horizontal layout: [Sidebar] | [Stacked Pages]
+        # Horizontal layout
         self.h_layout = QHBoxLayout()
         self.h_layout.setContentsMargins(0, 0, 0, 0)
         self.h_layout.setSpacing(0)
         self.content_container.setLayout(self.h_layout)
 
-        # 1. Sidebar (Custom Buttons)
+        # Sidebar (Custom Buttons)
         self.sidebar = QWidget()
-        self.sidebar.setFixedWidth(120) # Starts wide
+        self.sidebar.setFixedWidth(120)
         self.sidebar.setStyleSheet("background-color: rgba(45, 45, 45, 255); border-right: 1px solid #555;")
         self.sidebar_layout = QVBoxLayout()
         self.sidebar_layout.setContentsMargins(5, 10, 5, 10)
@@ -248,13 +248,13 @@ class AIQuestionPanel(QFrame):
         
         self.h_layout.addWidget(self.sidebar)
 
-        # 2. Stacked Widget (The Content)
+        # Stacked Widget
         self.stack = QStackedWidget()
         self.h_layout.addWidget(self.stack)
 
         self.main_layout.addWidget(self.content_container)
 
-        # --- Header Bar (Always Visible) ---
+        # --- Header Bar ---
         self.header_bar = QFrame()
         self.header_bar.setFixedHeight(40)
         self.header_bar.setStyleSheet("background: rgba(40, 40, 40, 255); border-top: 1px solid #666; border-radius: 0px;")
@@ -271,7 +271,7 @@ class AIQuestionPanel(QFrame):
 
         self.content_container.hide()
         self.question_count = 0
-        self.buttons = [] # Store references to sidebar buttons
+        self.buttons = []
         
         self.max_width = 500
         self.button_width = 80
@@ -288,7 +288,7 @@ class AIQuestionPanel(QFrame):
     def place_panel(self, x, bottom_y, global_bottom_y):
         self.anchor_y = bottom_y
         self.global_anchor_y = global_bottom_y
-        self.closed_x = x # Save anchor
+        self.closed_x = x
         
         h = self.current_height if self.is_expanded else self.collapsed_height
         
@@ -305,7 +305,6 @@ class AIQuestionPanel(QFrame):
         if self.button_mode == enabled: return
         self.button_mode = enabled
         
-        # Force Sidebar to match
         self.set_compact_mode(enabled)
         
         if not self.is_expanded:
@@ -465,11 +464,8 @@ class AIQuestionPanel(QFrame):
         else:
             # COLLAPSED STATE
             target_w = self.button_width if self.button_mode else self.max_width
-            
-            # --- FIX: Force Right Alignment in Button Mode ---
+
             if self.button_mode:
-                # Calculate X dynamically to ensure it stays on the right
-                # (Parent Width - Button Width - 10px Margin)
                 target_x = self.parent().width() - target_w - 10
             else:
                 target_x = self.closed_x
@@ -519,12 +515,12 @@ class EntityPanel(QFrame):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.max_width = 450 # Standard width
-        self.button_width = 80 # Width when collapsed in button mode
+        self.max_width = 450 
+        self.button_width = 80 
         self.setFixedWidth(self.max_width)
         
         self.is_expanded = False
-        self.button_mode = False # State flag
+        self.button_mode = False
         
         self.expanded_height = 300
         self.collapsed_height = 40 
@@ -550,7 +546,7 @@ class EntityPanel(QFrame):
         self.content_layout.setContentsMargins(5, 5, 5, 5)
         self.content_area.setLayout(self.content_layout)
         
-        self.list_widget = DeletableListWidget() # Assuming DeletableListWidget is defined
+        self.list_widget = DeletableListWidget()
         self.list_widget.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.list_widget.setWordWrap(True)
         self.list_widget.setStyleSheet("""
@@ -587,7 +583,6 @@ class EntityPanel(QFrame):
         if self.button_mode == enabled: return
         self.button_mode = enabled
         
-        # Immediate update if currently collapsed
         if not self.is_expanded:
             w = self.button_width if enabled else self.max_width
             txt = "Ctx" if enabled else "Context Monitor ▲"
@@ -596,7 +591,7 @@ class EntityPanel(QFrame):
 
     def place_panel(self, x, bottom_y):
         self.anchor_y = bottom_y
-        self.closed_x = x # Save the anchor position
+        self.closed_x = x 
         
         h = self.expanded_height if self.is_expanded else self.collapsed_height
         
@@ -614,7 +609,7 @@ class EntityPanel(QFrame):
     def toggle(self):
         if self.anchor_y == 0: return
         self.is_expanded = not self.is_expanded
-        self.panel_toggled.emit(self.is_expanded) # Emit signal
+        self.panel_toggled.emit(self.is_expanded) 
         
         # Text Logic
         if self.button_mode and not self.is_expanded:

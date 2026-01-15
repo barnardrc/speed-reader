@@ -21,7 +21,6 @@ class TutorialOverlay(QWidget):
         
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, False)
-        # Note: We do not call self.resize() here; main.py sets geometry
         
         # Main Message Container
         self.msg_container = QFrame(self)
@@ -156,8 +155,7 @@ class TutorialOverlay(QWidget):
         # Default Center
         center_x = (self.width() - self.msg_container.width()) // 2
         center_y = (self.height() - self.msg_container.height()) // 2
-        
-        # Smart Positioning: Check for overlap with current target
+
         if self.current_step < len(self.steps):
             target_widget, _ = self.steps[self.current_step]
             if target_widget and target_widget.isVisible():
@@ -168,11 +166,10 @@ class TutorialOverlay(QWidget):
                 msg_rect = QRect(center_x, center_y, self.msg_container.width(), self.msg_container.height())
                 
                 if msg_rect.intersects(target_rect):
-                    # Overlap detected. Move box to top or bottom depending on target Y
                     if target_rect.center().y() > self.height() // 2:
-                        center_y = 50 # Move to top
+                        center_y = 50
                     else:
-                        center_y = self.height() - self.msg_container.height() - 50 # Move to bottom
+                        center_y = self.height() - self.msg_container.height() - 50
                         
         self.msg_container.move(center_x, center_y)
 
@@ -187,7 +184,6 @@ class TutorialOverlay(QWidget):
             self.graphic_area.hide()
             self.lbl_msg.show()
 
-            # --- CUSTOM STEP LOGIC ---
             if msg == "HOTKEYS":
                 self.lbl_msg.hide()
                 self.build_hotkey_layout()
@@ -207,7 +203,6 @@ class TutorialOverlay(QWidget):
                     "2. The bar at the bottom should turn ORANGE (Paused).\n"
                     "3. Look back down to resume."
                 )
-            # -------------------------
             
             else:
                 self.lbl_msg.setText(msg)
@@ -262,7 +257,5 @@ class TutorialOverlay(QWidget):
             painter.drawRoundedRect(target_rect, 5, 5)
 
     def resizeEvent(self, event):
-        # FIX: Do NOT call self.resize(parent.size()) here. 
-        # The parent (main.py) manages our geometry via its own resizeEvent.
         self.center_msg_box()
         super().resizeEvent(event)

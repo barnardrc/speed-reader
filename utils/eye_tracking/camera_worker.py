@@ -27,12 +27,12 @@ class EyeTrackingWorker(QThread):
 
         while self.running:
             try:
-                # 1. Get Frame 
+                # Get Frame 
                 frame = self.tracker.get_frame()
                 if frame is None: 
                     continue
 
-                # 2. Process
+                # Process
                 frame, avg_ratio = self.tracker.detect_pupils(frame)
                 
                 # Guard against None if detection fails completely
@@ -42,12 +42,12 @@ class EyeTrackingWorker(QThread):
                 else:
                     eyes_off, limit_ratio = self.tracker.check_gaze(avg_ratio)
                 
-                # 3. Emit Data
+                # Emit Data
                 self.update_signal.emit(frame, avg_ratio, eyes_off, limit_ratio)
 
             except Exception as e:
                 print(f"Error in EyeTracking loop: {e}")
-                # Optional: self.running = False
+                self.running = False
 
         self.tracker.release()
         print("EyeTrackingWorker: Stopped")

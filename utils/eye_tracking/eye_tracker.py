@@ -64,8 +64,7 @@ class EyeTracker:
         """
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
-        # UPGRADE 1: Bilateral Filter
-        # Smooths noise but keeps the sharp edges of the pupil
+        # Bilateral Filter
         gray = cv2.bilateralFilter(gray, 10, 25, 25)
         
         ratios = []
@@ -76,24 +75,23 @@ class EyeTracker:
             # Draw Face Box
             cv2.rectangle(frame, (fx, fy), (fx+fw, fy+fh), (255, 0, 0), 1)
 
-            # Optimization: Only look for eyes in the top half
+            # Only look for eyes in the top half
             roi_gray = gray[fy:fy+fh//2, fx:fx+fw]
             
             eyes = self.eye_cascade.detectMultiScale(roi_gray, 1.1, 5)
             
             for (ex, ey, ew, eh) in eyes:
-                # OPTIMIZATION: Crop top 25% (eyebrows)
+                # Crop top 25% because eyebrows
                 eyebrow_cut = int(eh * 0.25)
                 eye_roi = roi_gray[ey + eyebrow_cut : ey + eh, ex : ex + ew]
                 
-                # UPGRADE 2: Morphological Processing
-                # Threshold first
+                # Morphological Processing
                 _, threshold = cv2.threshold(eye_roi, 40, 255, cv2.THRESH_BINARY_INV)
                 
-                # 'Opening' removes white noise (eyelashes) from the black background
-                kernel = np.ones((2, 2), np.uint8) # Small kernel for small pupils
+                # Opening
+                kernel = np.ones((2, 2), np.uint8)
                 threshold = cv2.erode(threshold, kernel, iterations=1)
-                threshold = cv2.dilate(threshold, kernel, iterations=2) # Dilate back to restore size
+                threshold = cv2.dilate(threshold, kernel, iterations=2)
 
                 contours, _ = cv2.findContours(threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
                 contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
@@ -101,13 +99,12 @@ class EyeTracker:
                 if len(contours) > 0:
                     cnt = contours[0]
                     
-                    # UPGRADE 3: Image Moments (Center of Mass)
-                    # This calculates the float center of the blob, not the integer box center
+                    # Image Moments (Center of Mass)
                     M = cv2.moments(cnt)
                     
                     if M['m00'] != 0:
-                        cx = M['m10'] / M['m00'] # Float coordinate (e.g. 15.43)
-                        cy = M['m01'] / M['m00'] # Float coordinate (e.g. 12.88)
+                        cx = M['m10'] / M['m00']
+                        cy = M['m01'] / M['m00']
                         
                         # Calculate Pupil Center relative to the original eye box
                         pupil_center_y = cy + eyebrow_cut
@@ -146,29 +143,21 @@ class EyeTracker:
 
         limit = self.baseline_ratio - self.threshold_buffer
 
-        # 1. RAW CHECK (Is this specific frame 'looking up'?)
-        # Note: We treat the "flicker" as a raw True
         is_up_raw = (current_ratio < limit)
 
-        # 2. ADD TO HISTORY
-        # We store 1 (True) or 0 (False)
         self.history.append(1 if is_up_raw else 0)
 
-        # 3. CALCULATE DENSITY (The "Flicker" Filter)
-        # If history is [0,0,1,0,0], sum is 1. 1/5 = 0.2 (20%) -> Ignore
-        # If history is [1,0,1,1,1], sum is 4. 4/5 = 0.8 (80%) -> Trigger
-
-        # Wait until buffer is full to avoid false starts
+        # CALCULATE DENSITY
         if len(self.history) < self.history_size:
             return False, limit
 
         avg_score = sum(self.history) / self.history_size
 
-        # 4. DETERMINE FINAL STATE
+        # DETERMINE FINAL STATE
         if avg_score > self.activation_threshold:
-            self.eyes_off = True  # Looking UP (Dense Flickering)
+            self.eyes_off = True  # Looking UP 
         else:
-            self.eyes_off = False # Looking DOWN (Occasional Flickering)
+            self.eyes_off = False # Looking DOWN
 
         return self.eyes_off, limit
 

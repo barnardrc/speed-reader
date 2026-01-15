@@ -22,11 +22,11 @@ from PyQt6.QtGui import QBrush
 from PyQt6.QtCore import QTimer
 
 class CameraIndicator(QWidget):
-    clicked = pyqtSignal() # New signal
+    clicked = pyqtSignal() 
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(20, 20) # Made slightly larger for touch
+        self.setFixedSize(20, 20) 
         self.active = False
         self.setStyleSheet("background: transparent;")
         
@@ -101,8 +101,7 @@ class ContextFlowWidget(QWidget):
     def resizeEvent(self, event):
         """Dynamically scales context font based on widget height."""
         h = self.height()
-        
-        # Heuristic: Font size is ~3% of height, clamped between 12 and 24
+
         target_size = int(h * 0.04) 
         new_size = max(12, min(self.max_font_size, target_size))
         
@@ -150,7 +149,7 @@ class ContextFlowWidget(QWidget):
         center_y = w_height / 2
         
         # Use updated metrics
-        line_height = self.metrics.height() + 5 # Tighter leading for small screens
+        line_height = self.metrics.height() + 5 
         separator_y = center_y + (line_height * 3.5) + 5 
 
         grad_sep = QLinearGradient(0, 0, w_width, 0)
@@ -310,14 +309,11 @@ class RSVPWidget(QWidget):
         h = self.height()
         w = self.width()
         
-        # Constraints: 
-        # 1. Height: Text should occupy ~40% of height to leave room for markers/bar
-        # 2. Width: Assume a long word (approx 15 chars) needs to fit
         target_h = int(h * 0.4)
         target_w = int(w / 15)
         
         new_size = min(self.max_font_size, target_h, target_w)
-        new_size = max(14, new_size) # Absolute minimum legibility
+        new_size = max(14, new_size)
         
         if self.font.pointSize() != new_size:
             self.font.setPointSize(new_size)
@@ -343,15 +339,12 @@ class RSVPWidget(QWidget):
 
         # STATUS COLOR LOGIC
         if getattr(self, 'status_code', 0) == 1: 
-            # Green (Active)
             c_center = QColor("#4caf50")
             c_edge = QColor("#2e7d32")
         elif getattr(self, 'status_code', 0) == 2: 
-            # Orange (Gaze Paused)
             c_center = QColor("#ff9800")
             c_edge = QColor("#f57c00")
         else: 
-            # Red (Stopped)
             c_center = QColor("#e57373")
             c_edge = QColor("#c62828")
 
@@ -403,7 +396,7 @@ class RSVPWidget(QWidget):
         painter.drawText(pivot_draw_x - left_w, cy, left_part)
         painter.drawText(pivot_draw_x + pivot_w, cy, right_part)
 
-        # Dynamic Pivot Lines (Scale with font size)
+        # Dynamic Pivot Lines
         painter.setPen(QPen(QColor("#444"), max(1, f_height // 20)))
         
         top_line_y = cy - f_ascent - (f_height // 4)
@@ -616,7 +609,7 @@ class ControlBar(QWidget):
     def __init__(self, settings, parent=None):
         super().__init__(parent)
         self.settings = settings
-        self.compact_threshold = 750 # Width in pixels to trigger compact mode
+        self.compact_threshold = 750
         
         self.init_ui()
 
@@ -626,7 +619,7 @@ class ControlBar(QWidget):
         self.layout.setSpacing(5)
         self.setLayout(self.layout)
 
-        # --- Row 1: Primary Controls (Speed, Main Buttons) ---
+        # --- Primary Controls ---
         row1 = QHBoxLayout()
         row1.setContentsMargins(0, 0, 0, 0)
         
@@ -660,7 +653,7 @@ class ControlBar(QWidget):
         self.btn_ai.clicked.connect(self.ai_settings_clicked.emit)
         row1.addWidget(self.btn_ai)
         
-        # Toggle Button (Hidden by default, used in compact mode)
+        # Toggle Button
         self.btn_visuals = QPushButton("Visuals ▼")
         self.btn_visuals.setCheckable(True)
         self.btn_visuals.setFixedWidth(80)
@@ -670,7 +663,7 @@ class ControlBar(QWidget):
 
         self.layout.addLayout(row1)
 
-        # --- Row 2: Visual Sliders (Context, Flank, Range) ---
+        # --- Row 2: Visual Sliders ---
         self.visual_frame = QFrame()
         self.visual_layout = QHBoxLayout()
         self.visual_layout.setContentsMargins(0, 5, 0, 0)
@@ -720,12 +713,12 @@ class ControlBar(QWidget):
         is_compact = self.width() < self.compact_threshold
         
         if is_compact:
-            # Compact Mode: Show Toggle Button, Hide Frame by default
+            # Compact Mode
             self.btn_visuals.show()
             if not self.btn_visuals.isChecked():
                 self.visual_frame.hide()
         else:
-            # Full Mode: Hide Toggle Button, Always Show Frame
+            # Full Mode
             self.btn_visuals.hide()
             self.visual_frame.show()
             

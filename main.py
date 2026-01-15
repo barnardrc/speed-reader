@@ -88,35 +88,28 @@ class WordDisplay(QMainWindow):
         # --- Sidebar ---
         self.sidebar = QWidget()
         self.sidebar.setFixedWidth(200)
-        # Ensure it has a background so text underneath doesn't show through in overlay mode
         self.sidebar.setStyleSheet("background-color: #2b2b2b; border-right: 1px solid #444;")
         
         self.sidebar_layout = QVBoxLayout()
-        self.sidebar_layout.setContentsMargins(5, 10, 5, 5) # Add margins
+        self.sidebar_layout.setContentsMargins(5, 10, 5, 5)
         
         # -- Sidebar Header --
         sidebar_header = QHBoxLayout()
         lbl_chap = QLabel("  Chapters")
         lbl_chap.setStyleSheet("font-weight: bold; color: #aaa;")
         sidebar_header.addWidget(lbl_chap)
-        
         sidebar_header.addStretch()
-        
-        # The new Close Button
         self.btn_close_sidebar = QPushButton("✕")
         self.btn_close_sidebar.setFixedSize(30, 30)
         self.btn_close_sidebar.setStyleSheet("color: #aaa; border: none; font-weight: bold;")
         self.btn_close_sidebar.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_close_sidebar.clicked.connect(self.toggle_sidebar)
         sidebar_header.addWidget(self.btn_close_sidebar)
-        
         self.sidebar_layout.addLayout(sidebar_header)
-        # --------------------
-
         self.chapter_list = QListWidget()
         self.chapter_list.setFrameShape(QFrame.Shape.NoFrame)
         self.chapter_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.chapter_list.setStyleSheet("background: transparent;") # Match new background
+        self.chapter_list.setStyleSheet("background: transparent;") 
         self.chapter_list.itemClicked.connect(self.on_chapter_clicked)
         self.sidebar_layout.addWidget(self.chapter_list)
         self.btn_exit = QPushButton("Quit Application")
@@ -326,8 +319,7 @@ class WordDisplay(QMainWindow):
             if is_in_layout:
                 self.main_layout.removeWidget(self.sidebar)
                 self.sidebar.setParent(self.central_widget) # Float it
-            
-            # Force geometry to cover left side
+
             if self.sidebar.isVisible():
                 self.sidebar.setGeometry(0, 0, 200, self.height())
                 self.sidebar.raise_() # Ensure it sits on top of content
@@ -335,10 +327,8 @@ class WordDisplay(QMainWindow):
         else:
             # SWITCH TO LAYOUT MODE
             if not is_in_layout:
-                # Add to index 0 (left side)
                 self.main_layout.insertWidget(0, self.sidebar) 
                 
-            # Reset geometry so layout takes control
             self.sidebar.resize(200, self.sidebar.height())
     
     def set_wpm(self, value):
@@ -383,8 +373,6 @@ class WordDisplay(QMainWindow):
         if is_raspberry_pi():
             steps.append((self.rsvp_display, "Tap anywhere in this area to Play or Pause reading."))
             steps.append((self.rsvp_display, "EYE_CALIB"))
-            
-            # Step C: Eye Tracking Test
             steps.append((self.context_display, "EYE_TEST"))
                 
         else:
@@ -412,16 +400,13 @@ class WordDisplay(QMainWindow):
         Main UI Thread handler. 
         Reacts to the flags raised by the background eye tracker.
         """
-        # 1. Ping Indicator
         if hasattr(self, 'cam_indicator'):
             self.cam_indicator.ping()
 
-        # 2. Handle Calibration
         if self.calibration_requested and avg_ratio is not None:
             self.eye_worker.calibrate(avg_ratio)
             self.calibration_requested = False
-            
-            # FIX: Ensure we don't pause on the exact frame we calibrate
+
             eyes_off = False 
 
             # Tutorial Logic
@@ -431,11 +416,9 @@ class WordDisplay(QMainWindow):
                     self.tutorial.next_step()
                     if self.is_running: self.toggle_reading()
 
-        # 3. Update Debug Window
         if self.debug_window and self.debug_window.isVisible():
             self.debug_window.update_frame(frame, avg_ratio, limit_ratio, eyes_off)
 
-        # 4. Gaze Control Logic
         # We only apply eye tracking if the user has actually started reading
         if self.is_running:
             if eyes_off:
@@ -545,8 +528,7 @@ class WordDisplay(QMainWindow):
             self.eye_worker.stop()
             self.eye_worker.wait()
             was_tracking = True
- 
-         # 2. Capture state
+
          self.intended_fullscreen = self.isFullScreen()
          if self.file_path: self.persist_state()
          if self.is_running: self.toggle_reading()
@@ -740,8 +722,7 @@ class WordDisplay(QMainWindow):
         self.entity_buffer = []
         self.update_display_manual()
         if self.is_running: self.schedule_next_word()
-        
-        # FIX: Auto-close sidebar on mobile/overlay mode
+
         if self.width() < 750:
              self.toggle_sidebar()
              
@@ -898,8 +879,8 @@ class WordDisplay(QMainWindow):
         dlg = FootnoteDialog(current_page, content, self)
         dlg.exec()
         
-        self.btn_footnote.setChecked(False) # Uncheck button after closing
-        self.setFocus() # Return focus to main window
+        self.btn_footnote.setChecked(False)
+        self.setFocus()
     
     def highlight_current_chapter(self):
         if not self.chapters: return

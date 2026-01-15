@@ -3,7 +3,7 @@ import numpy as np
 from eye_tracker import EyeTracker
 
 # --- GLOBAL VARIABLES FOR MOUSE INTERACTION ---
-button_rect = (20, 20, 160, 50)  # (x, y, width, height)
+button_rect = (20, 20, 160, 50)
 calibration_triggered = False
 
 def mouse_callback(event, x, y, flags, param):
@@ -28,13 +28,13 @@ while True:
     frame = tracker.get_frame()
     if frame is None: continue
 
-    # 1. Get Pupil Ratio (0.0=Top, 1.0=Bottom)
+    # Get Pupil Ratio
     frame, avg_ratio = tracker.detect_pupils(frame)
 
-    # 2. Check Logic
+    # Check Logic
     eyes_off, limit_ratio = tracker.check_gaze(avg_ratio)
 
-    # --- CALIBRATION LOGIC (Button or Key) ---
+    # --- CALIBRATION LOGIC  ---
     if calibration_triggered:
         if avg_ratio is not None:
             tracker.calibrate(avg_ratio)
@@ -50,7 +50,7 @@ while True:
     green = (0, 255, 0)
     white = (255, 255, 255)
     grey = (100, 100, 100)
-    btn_color = (200, 200, 200) # Light Grey
+    btn_color = (200, 200, 200)
     
     # Status Message
     if tracker.baseline_ratio is None:
@@ -67,11 +67,8 @@ while True:
 
     # --- DRAW UI BUTTON ---
     bx, by, bw, bh = button_rect
-    # Draw Button Background
     cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), btn_color, -1)
-    # Draw Button Border
     cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (50, 50, 50), 2)
-    # Draw Button Text
     cv2.putText(frame, "CALIBRATE", (bx + 15, by + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
 
     # --- DRAW THE RATIO BAR ---

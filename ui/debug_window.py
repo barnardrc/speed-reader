@@ -26,7 +26,7 @@ class CameraDebugWindow(QWidget):
 
         h, w = cv_frame.shape[:2]
 
-        # 2. Draw Gaze Meter (Vertical Bar on Right Side)
+        # Draw Gaze Meter
         bar_width = 20
         bar_height = int(h * 0.6)
         bar_top = int(h * 0.2)
@@ -35,37 +35,37 @@ class CameraDebugWindow(QWidget):
         # Background
         cv2.rectangle(cv_frame, (bar_x, bar_top), (bar_x + bar_width, bar_top + bar_height), (100, 100, 100), -1)
 
-        # Draw Limit Line (Red)
+        # Draw Limit Line
         if limit_ratio is not None:
             limit_y = int(bar_top + (limit_ratio * bar_height))
             cv2.line(cv_frame, (bar_x - 10, limit_y), (bar_x + 30, limit_y), (0, 0, 255), 2)
             cv2.putText(cv_frame, "Limit", (bar_x - 45, limit_y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
 
-        # Draw Current Eye Position (Yellow Dot)
+        # Draw Current Eye Position
         if avg_ratio is not None:
             # Clamp ratio 0.0-1.0
             safe_ratio = max(0.0, min(1.0, avg_ratio))
             current_y = int(bar_top + (safe_ratio * bar_height))
             
             color = (0, 255, 255) # Yellow
-            if eyes_off: color = (0, 0, 255) # Red if looking away
+            if eyes_off: color = (0, 0, 255)
             
             cv2.circle(cv_frame, (bar_x + 10, current_y), 6, color, -1)
 
-        # 3. Status Text
+        # Status Text
         status_text = "Looking Down"
-        text_color = (0, 255, 0) # Green
+        text_color = (0, 255, 0)
         
         if eyes_off:
             status_text = "EYES OFF"
-            text_color = (0, 0, 255) # Red
+            text_color = (0, 0, 255)
         elif limit_ratio is None:
             status_text = "UNCALIBRATED"
-            text_color = (255, 255, 255) # White
+            text_color = (255, 255, 255) 
 
         cv2.putText(cv_frame, status_text, (10, h - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, text_color, 2)
 
-        # 4. Convert to Qt
+        # Convert to Qt
         rgb_image = cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb_image.shape
         bytes_per_line = ch * w
