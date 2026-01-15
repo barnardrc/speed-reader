@@ -425,6 +425,14 @@ class WordDisplay(QMainWindow):
             self.eye_worker.calibrate(avg_ratio)
             self.calibration_requested = False
             
+            # --- FIX STARTS HERE ---
+            # We just calibrated. The 'eyes_off' variable passed to this function 
+            # was calculated using the OLD calibration (or no calibration).
+            # We must override it to False, otherwise the app will immediately 
+            # switch to "Gaze Paused" (Orange) before the new calibration takes effect.
+            eyes_off = False 
+            # --- FIX ENDS HERE ---
+
             # Tutorial Auto-Advance
             if hasattr(self, 'tutorial') and self.tutorial.isVisible():
                 current_msg = self.tutorial.steps[self.tutorial.current_step][1]
@@ -442,7 +450,8 @@ class WordDisplay(QMainWindow):
                 self.is_gaze_paused = True
                 self.rsvp_display.set_status(2) # Orange
         else:
-            if self.is_gaze_paused:
+            # If we are running but paused by gaze, resume now
+            if self.is_running and self.is_gaze_paused:
                 self.is_gaze_paused = False
                 self.rsvp_display.set_status(1) # Green
                 self.schedule_next_word()
