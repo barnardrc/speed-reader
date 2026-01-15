@@ -36,6 +36,8 @@ class WordDisplay(QMainWindow):
         self.chapters = []
         self.file_path = ""
         self.is_running = False
+        self.is_gaze_paused = False
+        self.calibration_requested = False
         self.index = 0
         self.read_buffer = [] 
         self.entity_buffer = [] 
@@ -297,6 +299,34 @@ class WordDisplay(QMainWindow):
             # Wait for full render
             QTimer.singleShot(500, self.start_tutorial)
     
+    def process_eye_tracking(self):
+        if not self.eye_tracker: return
+        if not self.is_running: return
+
+        frame = self.eye_tracker.get_frame()
+        if frame is None: return
+        
+        frame, avg_y = self.eye_tracker.detect_pupils(frame)
+        
+        if self.calibration_requested and avg_y is not None:
+            self.eye_tracker.calibrate(avg_y)
+            self.calibration_requested = False
+            print(f"Calibrated at Y={avg_y}")
+            
+        eyes_off, _ = self.eye_tracker.check_gaze(avg_y)
+        
+        if eyes_off:
+            if not self.is_gaze_paused:
+                self.is_gaze_paused = True
+                print("Gaze lost - Pausing")
+                self.rsvp_display.set_status(2) # 2 = Orange
+        else:
+            if self.is_gaze_paused:
+                self.is_gaze_paused = False
+                print("Gaze found - Resuming")
+                self.rsvp_display.set_status(1) # 1 = Green
+                self.schedule_next_word()
+    
     def check_sidebar_mode(self):
         is_small = self.width() < 750
         is_in_layout = self.main_layout.indexOf(self.sidebar) != -1
@@ -323,18 +353,10 @@ class WordDisplay(QMainWindow):
     
     def set_wpm(self, value):
         self.wpm = value
-        # Ensure focus returns to reading after adjustment
-        # Note: Do not call self.setFocus() here to allow typing in spinbox
-
+        
     def set_visual_setting(self, attr_name, value, callback=None):
         setattr(self, attr_name, value)
         if callback: callback()
-        
-    def change_speed(self, delta):
-        # Update the ControlBar, not just the local variable
-        new_wpm = self.wpm + delta
-        # Clamp handled by widget, just need to update it
-        self.controls.update_wpm(new_wpm)
         
     def on_ai_toggled(self, is_open):
         if is_open and self.entity_panel.is_expanded:
@@ -347,8 +369,7 @@ class WordDisplay(QMainWindow):
     def start_tutorial(self):
         if hasattr(self, 'tutorial') and self.tutorial.isVisible():
             return
-
-        # Handle responsive visibility for the 'Visuals' step
+        
         if self.controls.visual_frame.isVisible():
             visual_target = self.controls.visual_frame
         else:
@@ -356,18 +377,36 @@ class WordDisplay(QMainWindow):
 
         steps = [
             (self.btn_open, "Start here! Click 'Open Book' to load an EPUB or PDF."),
-            (self.sidebar, "This sidebar displays chapters. Click any chapter to jump directly to it."),
-            (self.btn_menu, "Need more space? Click 'List' to toggle the chapter sidebar visibility."),
+            (self.btn_menu, "Click 'List' to open the sidebar. Use it to jump to specific chapters or quit the application."),
             (self.queue_monitor, "This is the AI Queue Monitor. It shows when the AI is reading or thinking."),
             (self.page_spin, "Know the exact page? Type it here to jump instantly."),
             (self.pct_btn, "Or use the percentage jump to navigate through the book."),
             (self.btn_footnote, "If a page has footnotes, this button lights up. Click to read them."),
-            (self.controls.wpm_slider, "Speed Control (WPM). Use Up/Down arrow keys while reading to adjust this on the fly."),
+            (self.controls.wpm_slider, "Speed Control (WPM)."),
             (visual_target, "Customize your view.\nAdjust Context, Flank words, and Range visibility here."),
             (self.controls.btn_pauses, "Smart Pauses: Configure how long the reader pauses on commas, periods, and headers."),
             (self.controls.btn_ai, "Configure your local LLM (Ollama) or adjust how often the AI reads the text."),
-            (None, "HOTKEYS") 
         ]
+        
+        self.eye_tracker = None
+        self.et_timer = QTimer()
+        
+        if is_raspberry_pi():
+            steps.append((self.rsvp_display, "Tap anywhere in this area to Play or Pause reading."))
+            try:
+                from utils.eye_tracker import EyeTracker
+                self.eye_tracker = EyeTracker()
+                print("Eye Tracker Initialized Successfully.")
+            
+                self.et_timer.timeout.connect(self.process_eye_tracking)
+                self.et_timer.start(33)
+                
+            except Exception as e:
+                print(f"Eye Tracker Warning: {e}")
+                QMessageBox.warning(self, "Eye Tracker Error", f"Could not init camera: {e}")
+                
+        else:
+            steps.append((None, "HOTKEYS"))
         
         self.tutorial = TutorialOverlay(self.central_widget, steps)
         
@@ -390,10 +429,8 @@ class WordDisplay(QMainWindow):
         line_pos = self.h_line.mapTo(self.central_widget, QPoint(0,0))
         global_line_pos = self.h_line.mapToGlobal(QPoint(0,0))
         
-        # AI Panel 
         if hasattr(self, 'ai_panel'):
             pw = self.ai_panel.width()
-            # Align right edge of panel with right end of separator line
             target_x = self.central_widget.width() - pw - VISUAL_MARGIN
             self.ai_panel.place_panel(target_x, line_pos.y(), global_line_pos.y())
         
@@ -430,22 +467,18 @@ class WordDisplay(QMainWindow):
             self.ai_panel.deliver_feedback(tab_id, response)
     
     def resizeEvent(self, event):
-        # 1. Check Threshold
         self.check_sidebar_mode()
         width = self.width()
         is_compact = width < 1250
         
-        # 2. Update Panels
         if hasattr(self, 'ai_panel'):
             self.ai_panel.set_button_mode(is_compact)
             
         if hasattr(self, 'entity_panel'):
             self.entity_panel.set_button_mode(is_compact)
             
-        # 3. Recalculate Positions (Crucial: widths changed, so X positions must shift)
         self.update_overlay_positions()
         
-        # 4. Tutorial
         if hasattr(self, 'tutorial') and self.tutorial.isVisible():
             self.tutorial.setGeometry(self.central_widget.rect())
             self.tutorial.center_msg_box()
@@ -457,7 +490,6 @@ class WordDisplay(QMainWindow):
         new_state = not self.sidebar.isVisible()
         self.sidebar.setVisible(new_state)
         
-        # If in overlay mode, ensure it's on top and sized correctly
         if new_state and self.width() < 750:
             self.sidebar.raise_()
             self.sidebar.setGeometry(0, 0, 200, self.height())
@@ -711,6 +743,10 @@ class WordDisplay(QMainWindow):
             self.ai_worker.stop()
             self.ai_worker.wait(2000)
             
+        # Release Camera
+        if self.eye_tracker:
+            self.eye_tracker.release()
+            
         e.accept()
 
     def persist_state(self):
@@ -735,12 +771,14 @@ class WordDisplay(QMainWindow):
             # STOPPING
             self.timer.stop()
             self.is_running = False
-            self.rsvp_display.set_status(False) # Turn Red
+            self.is_gaze_paused = False
+            self.rsvp_display.set_status(0) # 0 = Red
             self.persist_state()
         else:
             # STARTING
             self.is_running = True
-            self.rsvp_display.set_status(True)  # Turn Green
+            self.calibration_requested = True
+            self.rsvp_display.set_status(1)  # 1 = Green
             self.schedule_next_word()
 
     def update_speed_from_slider(self):
@@ -837,6 +875,7 @@ class WordDisplay(QMainWindow):
 
     def schedule_next_word(self):
         if not self.is_running: return
+        if self.is_gaze_paused: return
         base_ms = int(60000 / self.wpm)
         multiplier = 1.0
         

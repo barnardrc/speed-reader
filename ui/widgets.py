@@ -248,8 +248,14 @@ class RSVPWidget(QWidget):
         self.flank_opacity = max(0, min(255, int(value)))
         self.update()
         
-    def set_status(self, is_active):
-        self.is_active = is_active
+    def set_status(self, status_code):
+        """
+        Updates the peripheral status bar.
+        0 = Red (Stopped)
+        1 = Green (Flowing)
+        2 = Orange (Gaze Paused)
+        """
+        self.status_code = status_code
         self.update()
 
     def resizeEvent(self, event):
@@ -288,15 +294,21 @@ class RSVPWidget(QWidget):
 
         gradient = QLinearGradient(x_bar, y_bar, x_bar + bar_width, y_bar)
 
-        if self.is_active:
+        # STATUS COLOR LOGIC
+        if getattr(self, 'status_code', 0) == 1: 
+            # Green (Active)
             c_center = QColor("#4caf50")
-            c_edge = QColor("#2e7d32") 
-            c_edge.setAlpha(180)   
-        else:
+            c_edge = QColor("#2e7d32")
+        elif getattr(self, 'status_code', 0) == 2: 
+            # Orange (Gaze Paused)
+            c_center = QColor("#ff9800")
+            c_edge = QColor("#f57c00")
+        else: 
+            # Red (Stopped)
             c_center = QColor("#e57373")
             c_edge = QColor("#c62828")
-            c_edge.setAlpha(180)
 
+        c_edge.setAlpha(180)
         gradient.setColorAt(0.0, c_edge)
         gradient.setColorAt(0.5, c_center)
         gradient.setColorAt(1.0, c_edge)

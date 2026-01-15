@@ -8,7 +8,6 @@ Created on Wed Jan 14 19:23:59 2026
 
 import cv2
 import os
-import numpy as np
 
 class EyeTracker:
     def __init__(self):
