@@ -114,7 +114,27 @@ class WordDisplay(QMainWindow):
         self.chapter_list.setStyleSheet("background: transparent;") # Match new background
         self.chapter_list.itemClicked.connect(self.on_chapter_clicked)
         self.sidebar_layout.addWidget(self.chapter_list)
-        
+        self.btn_exit = QPushButton("Quit Application")
+        self.btn_exit.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_exit.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_exit.setStyleSheet("""
+            QPushButton {
+                background-color: #3e3e3e; 
+                color: #ff6b6b; 
+                border: 1px solid #555; 
+                padding: 8px; 
+                border-radius: 4px;
+                font-weight: bold;
+                margin-top: 5px;
+            }
+            QPushButton:hover { 
+                background-color: #c62828; 
+                color: white; 
+                border-color: #c62828;
+            }
+        """)
+        self.btn_exit.clicked.connect(self.close)
+        self.sidebar_layout.addWidget(self.btn_exit)
         self.sidebar.setLayout(self.sidebar_layout)
         self.sidebar.hide()
 
