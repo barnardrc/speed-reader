@@ -282,7 +282,7 @@ class RSVPWidget(QWidget):
         self.font = QFont("Consolas", self.max_font_size, QFont.Weight.Bold)
         self.metrics = QFontMetrics(self.font)
         
-        self.setMinimumHeight(80) 
+        self.setMinimumHeight(80)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
     def set_word(self, word, prev_word="", next_word=""):
