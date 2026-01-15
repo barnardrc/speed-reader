@@ -22,24 +22,29 @@ from PyQt6.QtGui import QBrush
 from PyQt6.QtCore import QTimer
 
 class CameraIndicator(QWidget):
+    clicked = pyqtSignal() # New signal
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(12, 12)
+        self.setFixedSize(20, 20) # Made slightly larger for touch
         self.active = False
         self.setStyleSheet("background: transparent;")
         
-        # Auto-timeout to flicker/turn off if frames stop coming
         self.timer = QTimer()
-        self.timer.setInterval(200) # 200ms timeout
+        self.timer.setInterval(200)
         self.timer.timeout.connect(self.turn_off)
         self.timer.start()
 
+    def mousePressEvent(self, event):
+        """Detect touch/click to toggle debug"""
+        self.clicked.emit()
+        super().mousePressEvent(event)
+
     def ping(self):
-        """Call this every time a frame is processed"""
         if not self.active:
             self.active = True
             self.update()
-        self.timer.start() # Reset timeout
+        self.timer.start()
 
     def turn_off(self):
         if self.active:
@@ -51,13 +56,14 @@ class CameraIndicator(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         if self.active:
-            color = QColor("#00e676") # Bright Green
+            color = QColor("#00e676")
         else:
-            color = QColor("#555") # Dim Grey (Inactive)
+            color = QColor("#555")
 
         painter.setBrush(QBrush(color))
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(2, 2, 8, 8)
+        # Centered dot
+        painter.drawEllipse(5, 5, 10, 10)
 
 class ContextFlowWidget(QWidget):
     scrolled = pyqtSignal(int)

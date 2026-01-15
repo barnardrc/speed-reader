@@ -38,6 +38,7 @@ class WordDisplay(QMainWindow):
         self.is_running = False
         self.is_gaze_paused = False
         self.calibration_requested = False
+        self.debug_window = None
         self.index = 0
         self.read_buffer = [] 
         self.entity_buffer = [] 
@@ -285,9 +286,10 @@ class WordDisplay(QMainWindow):
         if is_raspberry_pi():
             from ui.widgets import CameraIndicator
             self.cam_indicator = CameraIndicator(self.central_widget)
-            self.cam_indicator.move(5, 5)
+            self.cam_indicator.move(475, 5)
             self.cam_indicator.show()
             self.cam_indicator.raise_()
+            self.cam_indicator.clicked.connect(self.toggle_debug_window)
         
         self.ai_panel.submit_task_signal.connect(self.ai_worker.add_task)
         
@@ -314,6 +316,15 @@ class WordDisplay(QMainWindow):
         if frame is None: return
         
         frame, avg_y = self.eye_tracker.detect_pupils(frame)
+        
+        # --- DEBUG UPDATE ---
+        if self.debug_window and self.debug_window.isVisible():
+            self.debug_window.update_frame(
+                frame, 
+                avg_y, 
+                self.eye_tracker.baseline_y, 
+                self.eye_tracker.threshold_buffer
+            )
         
         if self.calibration_requested and avg_y is not None:
             self.eye_tracker.calibrate(avg_y)
@@ -718,7 +729,19 @@ class WordDisplay(QMainWindow):
              self.toggle_sidebar()
              
         self.setFocus()
+    
+    def toggle_debug_window(self):
+        if not is_raspberry_pi(): return
 
+        if self.debug_window is None:
+            from ui.debug_window import CameraDebugWindow
+            self.debug_window = CameraDebugWindow(self)
+
+        if self.debug_window.isVisible():
+            self.debug_window.hide()
+        else:
+            self.debug_window.show()
+    
     def keyPressEvent(self, e):
         if not self.words: return
         if e.key() == Qt.Key.Key_Space: self.toggle_reading()
