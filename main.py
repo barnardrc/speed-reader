@@ -543,17 +543,38 @@ class WordDisplay(QMainWindow):
         QTimer.singleShot(0, self.update_overlay_positions)
     
     def open_file_dialog(self):
-        self.intended_fullscreen = self.isFullScreen()
-
-        if self.file_path: self.persist_state()
-        if self.is_running: self.toggle_reading()
-        
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open Book", "", "Books (*.epub *.pdf);;EPUB Files (*.epub);;PDF Files (*.pdf)")
-        
-        if self.intended_fullscreen:
-            self.showFullScreen()
-
-        if file_path: self.load_book(os.path.abspath(file_path))
+         # 1. PAUSE CAMERA (Crucial!)
+         # Stop the update loop so it doesn't fight the dialog for resources
+         if hasattr(self, 'et_timer') and self.et_timer.isActive():
+             self.et_timer.stop()
+ 
+         # 2. Capture state
+         self.intended_fullscreen = self.isFullScreen()
+         if self.file_path: self.persist_state()
+         if self.is_running: self.toggle_reading()
+         
+         # 3. Open Dialog with "DontUseNativeDialog"
+         # This prevents the OS window manager from creating a separate window surface
+         # which often causes the "ghost window" bug on Pi/Linux.
+         file_path, _ = QFileDialog.getOpenFileName(
+             self, 
+             "Open Book", 
+             "", 
+             "Books (*.epub *.pdf);;EPUB Files (*.epub);;PDF Files (*.pdf)",
+             options=QFileDialog.Option.DontUseNativeDialog
+         )
+         
+         # 4. Restore Fullscreen immediately to prevent flickering
+         if self.intended_fullscreen:
+             self.showFullScreen()
+ 
+         # 5. Load Book if selected
+         if file_path: 
+             self.load_book(os.path.abspath(file_path))
+             
+         # 6. RESUME CAMERA
+         if hasattr(self, 'et_timer'):
+             self.et_timer.start(33)
 
     def load_book(self, file_path):
         print(f"Loading: {file_path}")
