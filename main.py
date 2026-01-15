@@ -286,7 +286,6 @@ class WordDisplay(QMainWindow):
         if is_raspberry_pi():
             from ui.widgets import CameraIndicator
             self.cam_indicator = CameraIndicator(self.central_widget)
-            self.cam_indicator.move(475, 5)
             self.cam_indicator.show()
             self.cam_indicator.raise_()
             self.cam_indicator.clicked.connect(self.toggle_debug_window)
@@ -500,6 +499,10 @@ class WordDisplay(QMainWindow):
         self.check_sidebar_mode()
         width = self.width()
         is_compact = width < 1250
+        
+        if hasattr(self, 'cam_indicator'):
+            self.cam_indicator.move(self.width() - 25, 5)
+            self.cam_indicator.raise_()
         
         if hasattr(self, 'ai_panel'):
             self.ai_panel.set_button_mode(is_compact)
