@@ -28,7 +28,7 @@ Linux / macOS: Run the setup script from the terminal:
 chmod +x setup.sh  # (Only needed the first time)
 ./setup.sh
 ```
-_Follow the on-screen prompts to install dependencies and the required AI model._
+_Follow the on-screen prompts to install dependencies and the recommended AI model (Optional)._
 
 #### Running the Application
 Once installation is complete, use the shortcut created in the root folder:
@@ -57,6 +57,7 @@ python main.py
 source venv/bin/activate
 python main.py
 ```
+
 
 
 
