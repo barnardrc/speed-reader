@@ -282,6 +282,13 @@ class WordDisplay(QMainWindow):
         if not self.entity_enabled: self.entity_panel.hide()
         else: self.entity_panel.show()
         
+        if is_raspberry_pi():
+            from ui.widgets.rsvp_widget import CameraIndicator
+            self.cam_indicator = CameraIndicator(self.central_widget)
+            self.cam_indicator.move(5, 5)
+            self.cam_indicator.show()
+            self.cam_indicator.raise_()
+        
         self.ai_panel.submit_task_signal.connect(self.ai_worker.add_task)
         
         # Connect Exclusivity Logic

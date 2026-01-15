@@ -18,6 +18,47 @@ from PyQt6.QtGui import QPainter, QFont, QFontMetrics, QColor, QPen, QLinearGrad
 from PyQt6.QtCore import QRectF, QPointF, QPoint, QEvent
 from utils.text_utils import is_header
 
+from PyQt6.QtGui import QBrush
+from PyQt6.QtCore import QTimer
+
+class CameraIndicator(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(12, 12)
+        self.active = False
+        self.setStyleSheet("background: transparent;")
+        
+        # Auto-timeout to flicker/turn off if frames stop coming
+        self.timer = QTimer()
+        self.timer.setInterval(200) # 200ms timeout
+        self.timer.timeout.connect(self.turn_off)
+        self.timer.start()
+
+    def ping(self):
+        """Call this every time a frame is processed"""
+        if not self.active:
+            self.active = True
+            self.update()
+        self.timer.start() # Reset timeout
+
+    def turn_off(self):
+        if self.active:
+            self.active = False
+            self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        if self.active:
+            color = QColor("#00e676") # Bright Green
+        else:
+            color = QColor("#555") # Dim Grey (Inactive)
+
+        painter.setBrush(QBrush(color))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(2, 2, 8, 8)
+
 class ContextFlowWidget(QWidget):
     scrolled = pyqtSignal(int)
     
