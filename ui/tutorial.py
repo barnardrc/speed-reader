@@ -178,19 +178,39 @@ class TutorialOverlay(QWidget):
 
     def update_content(self):
         if self.current_step < len(self.steps):
-            _, msg = self.steps[self.current_step]
+            target_widget, msg = self.steps[self.current_step]
             step_num = self.current_step + 1
             total = len(self.steps)
             self.lbl_title.setText(f"Tutorial {step_num}/{total}")
             
+            # Reset visibility
+            self.graphic_area.hide()
+            self.lbl_msg.show()
+
+            # --- CUSTOM STEP LOGIC ---
             if msg == "HOTKEYS":
                 self.lbl_msg.hide()
                 self.build_hotkey_layout()
                 self.graphic_area.show()
+                
+            elif msg == "EYE_CALIB":
+                self.lbl_msg.setText(
+                    "Eye Tracking Setup:\n"
+                    "1. Look directly at the word 'Ready' below.\n"
+                    "2. Tap the screen to calibrate your baseline."
+                )
+
+            elif msg == "EYE_TEST":
+                self.lbl_msg.setText(
+                    "Testing:\n"
+                    "1. Shift your eyes UP to the Context box.\n"
+                    "2. The bar at the bottom should turn ORANGE (Paused).\n"
+                    "3. Look back down to resume."
+                )
+            # -------------------------
+            
             else:
-                self.graphic_area.hide()
                 self.lbl_msg.setText(msg)
-                self.lbl_msg.show()
 
             if self.current_step == len(self.steps) - 1:
                 self.btn_next.setText("Finish")
@@ -198,7 +218,7 @@ class TutorialOverlay(QWidget):
                 self.btn_next.setText("Next")
             
             self.center_msg_box()
-            self.update() 
+            self.update()
 
     def next_step(self):
         self.current_step += 1

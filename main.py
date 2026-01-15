@@ -27,7 +27,7 @@ from utils.book_loader import BookLoader
 # UI Components
 from ui.dialogs import PauseSettingsDialog, AISettingsDialog, FootnoteDialog
 from ui.widgets import RSVPWidget, ContextFlowWidget, QueueMonitorWidget, ControlBar
-from ui.tutorial import TutorialOverlay # <--- NEW IMPORT
+from ui.tutorial import TutorialOverlay 
 
 class WordDisplay(QMainWindow):
     def __init__(self):
@@ -311,7 +311,15 @@ class WordDisplay(QMainWindow):
         if self.calibration_requested and avg_y is not None:
             self.eye_tracker.calibrate(avg_y)
             self.calibration_requested = False
-            print(f"Calibrated at Y={avg_y}")
+            
+            # --- TUTORIAL INTERACTION ---
+            if hasattr(self, 'tutorial') and self.tutorial.isVisible():
+                # If we are on the Calibration step, auto-advance!
+                current_msg = self.tutorial.steps[self.tutorial.current_step][1]
+                if current_msg == "EYE_CALIB":
+                    self.tutorial.next_step()
+                    # Force a temporary pause so they can read the next instruction
+                    if self.is_running: self.toggle_reading()
             
         eyes_off, _ = self.eye_tracker.check_gaze(avg_y)
         
@@ -393,8 +401,12 @@ class WordDisplay(QMainWindow):
         
         if is_raspberry_pi():
             steps.append((self.rsvp_display, "Tap anywhere in this area to Play or Pause reading."))
+            steps.append((self.rsvp_display, "EYE_CALIB"))
+            
+            # Step C: Eye Tracking Test
+            steps.append((self.context_display, "EYE_TEST"))
             try:
-                from utils.eye_tracker import EyeTracker
+                from utils.eye_tracking.eye_tracker import EyeTracker
                 self.eye_tracker = EyeTracker()
                 print("Eye Tracker Initialized Successfully.")
             
