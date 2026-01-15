@@ -83,6 +83,7 @@ class WordDisplay(QMainWindow):
         # --- Sidebar ---
         self.sidebar = QWidget()
         self.sidebar.setFixedWidth(200)
+        self.sidebar.setStyleSheet("background-color: #2b2b2b; border-right: 1px solid #444;")
         self.sidebar_layout = QVBoxLayout()
         self.sidebar_layout.addWidget(QLabel("  Chapters"))
         self.chapter_list = QListWidget()
@@ -91,7 +92,6 @@ class WordDisplay(QMainWindow):
         self.chapter_list.itemClicked.connect(self.on_chapter_clicked)
         self.sidebar_layout.addWidget(self.chapter_list)
         self.sidebar.setLayout(self.sidebar_layout)
-        self.main_layout.addWidget(self.sidebar)
 
         # --- Content Area ---
         self.content_widget = QWidget()
@@ -251,7 +251,31 @@ class WordDisplay(QMainWindow):
         if self.settings.get("first_run", False):
             # Wait for full render
             QTimer.singleShot(500, self.start_tutorial)
-        
+    
+    def check_sidebar_mode(self):
+        is_small = self.width() < 750
+        is_in_layout = self.main_layout.indexOf(self.sidebar) != -1
+
+        if is_small:
+            # SWITCH TO OVERLAY MODE
+            if is_in_layout:
+                self.main_layout.removeWidget(self.sidebar)
+                self.sidebar.setParent(self.central_widget) # Float it
+            
+            # Force geometry to cover left side
+            if self.sidebar.isVisible():
+                self.sidebar.setGeometry(0, 0, 200, self.height())
+                self.sidebar.raise_() # Ensure it sits on top of content
+                
+        else:
+            # SWITCH TO LAYOUT MODE
+            if not is_in_layout:
+                # Add to index 0 (left side)
+                self.main_layout.insertWidget(0, self.sidebar) 
+                
+            # Reset geometry so layout takes control
+            self.sidebar.resize(200, self.sidebar.height())
+    
     def set_wpm(self, value):
         self.wpm = value
         # Ensure focus returns to reading after adjustment
@@ -354,6 +378,7 @@ class WordDisplay(QMainWindow):
     
     def resizeEvent(self, event):
         # 1. Check Threshold
+        self.check_sidebar_mode()
         width = self.width()
         is_compact = width < 1250
         
@@ -375,15 +400,33 @@ class WordDisplay(QMainWindow):
         super().resizeEvent(event)
     
     def toggle_sidebar(self):
+        was_fullscreen = self.isFullScreen()
         new_state = not self.sidebar.isVisible()
         self.sidebar.setVisible(new_state)
         
+        # If in overlay mode, ensure it's on top and sized correctly
+        if new_state and self.width() < 750:
+            self.sidebar.raise_()
+            self.sidebar.setGeometry(0, 0, 200, self.height())
+
+        if was_fullscreen:
+            self.showFullScreen()
+            
         QTimer.singleShot(0, self.update_overlay_positions)
     
     def open_file_dialog(self):
+        # 1. Capture state
+        was_fullscreen = self.isFullScreen()
+
         if self.file_path: self.persist_state()
         if self.is_running: self.toggle_reading()
+        
         file_path, _ = QFileDialog.getOpenFileName(self, "Open Book", "", "Books (*.epub *.pdf);;EPUB Files (*.epub);;PDF Files (*.pdf)")
+        
+        # 2. Restore state immediately after dialog closes
+        if was_fullscreen:
+            self.showFullScreen()
+
         if file_path: self.load_book(os.path.abspath(file_path))
 
     def load_book(self, file_path):
