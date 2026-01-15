@@ -1,7 +1,8 @@
 # speed-reader
 
-A speed reading application powered by local AI.
-
+A speed reading application powered by local AI. Experimental eye tracking.
+#### Into to RSVP
+[How Fast Can You Read? - Speed Reading Challenge: *by Buffed, YouTube](https://www.youtube.com/watch?v=NdKcDPBQ-Lw)
 #### De-DRM Guide
 *Credit to u/caelypso299*
 [2024 Guide to DeDRM Kindle Books](https://www.reddit.com/r/Calibre/comments/1c2ryfz/2024_guide_to_dedrm_kindle_books/)
@@ -13,7 +14,7 @@ This project includes automated setup scripts that handle dependencies, virtual 
 
 1. **Clone the repository:**
  ```bash
- git clone [https://github.com/barnardrc/speed-reader](https://github.com/barnardrc/speed-reader)
+ git clone https://github.com/barnardrc/speed-reader
  cd speed-reader
  ```
 2. Run the setup script:
@@ -27,7 +28,7 @@ Linux / macOS: Run the setup script from the terminal:
 chmod +x setup.sh  # (Only needed the first time)
 ./setup.sh
 ```
-_Follow the on-screen prompts to install dependencies and the required AI model._
+_Follow the on-screen prompts to install dependencies and the recommended AI model (Optional)._
 
 #### Running the Application
 Once installation is complete, use the shortcut created in the root folder:
@@ -56,3 +57,9 @@ python main.py
 source venv/bin/activate
 python main.py
 ```
+
+
+
+
+
+
