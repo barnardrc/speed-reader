@@ -14,7 +14,7 @@ This project includes automated setup scripts that handle dependencies, virtual 
 
 1. **Clone the repository:**
  ```bash
- git clone [https://github.com/barnardrc/speed-reader](https://github.com/barnardrc/speed-reader)
+ git clone https://github.com/barnardrc/speed-reader
  cd speed-reader
  ```
 2. Run the setup script:
@@ -57,6 +57,7 @@ python main.py
 source venv/bin/activate
 python main.py
 ```
+
 
 
 
