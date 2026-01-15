@@ -283,7 +283,7 @@ class WordDisplay(QMainWindow):
         else: self.entity_panel.show()
         
         if is_raspberry_pi():
-            from ui.widgets.rsvp_widget import CameraIndicator
+            from ui.widgets import CameraIndicator
             self.cam_indicator = CameraIndicator(self.central_widget)
             self.cam_indicator.move(5, 5)
             self.cam_indicator.show()
