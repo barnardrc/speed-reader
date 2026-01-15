@@ -10,7 +10,7 @@ import bisect
 from PyQt6.QtCore import QTimer, Qt, QPoint
 from PyQt6.QtWidgets import (
     QApplication, QLabel, QVBoxLayout, QWidget, 
-    QSlider, QHBoxLayout, QProgressBar, QFileDialog,
+    QHBoxLayout, QProgressBar, QFileDialog,
     QSpinBox, QPushButton, QListWidget, QListWidgetItem,
     QFrame, QMainWindow, QMessageBox
 )
@@ -40,6 +40,7 @@ class WordDisplay(QMainWindow):
         self.is_gaze_paused = False
         self.calibration_requested = False
         self.debug_window = None
+        self.eye_worker = None
         self.index = 0
         self.read_buffer = [] 
         self.entity_buffer = [] 
@@ -534,6 +535,7 @@ class WordDisplay(QMainWindow):
          was_tracking = False
          if self.eye_worker and self.eye_worker.isRunning():
             self.eye_worker.stop()
+            self.eye_worker.wait() # FIX: Wait for thread to finish and release camera
             was_tracking = True
  
          # 2. Capture state
@@ -677,21 +679,6 @@ class WordDisplay(QMainWindow):
             
         self.setFocus()
 
-    def update_opacity(self):
-        self.opacity = self.op_slider.value()
-        self.update_context_view()
-        self.setFocus()
-
-    def update_flank_opacity(self):
-        self.flank_opacity = self.flank_slider.value()
-        self.rsvp_display.set_flank_opacity(self.flank_opacity)
-        self.setFocus()
-
-    def update_ctx_range(self):
-        self.ctx_range = self.ctx_slider.value()
-        self.update_context_view()
-        self.setFocus()
-        
     def update_ai_config(self):
         self.ai_enabled = self.settings.get("ai_enabled", False)
         self.ai_frequency = self.settings.get("ai_frequency", 500)
@@ -784,7 +771,8 @@ class WordDisplay(QMainWindow):
         """Called by Up/Down Arrow Keys"""
         new_wpm = self.wpm + delta
         new_wpm = max(self.slider.minimum(), min(self.slider.maximum(), new_wpm))
-        self.slider.setValue(new_wpm)
+        if hasattr(self.controls, 'wpm_slider'):
+             self.controls.wpm_slider.setValue(new_wpm)
 
     def mousePressEvent(self, e):
         # Get the actual widget under the mouse cursor
@@ -844,20 +832,6 @@ class WordDisplay(QMainWindow):
             self.calibration_requested = True
             self.rsvp_display.set_status(1)  # 1 = Green
             self.schedule_next_word()
-
-    def update_speed_from_slider(self):
-        """Called when user drags the slider"""
-        self.wpm = self.slider.value()
-        self.wpm_spin.blockSignals(True)
-        self.wpm_spin.setValue(self.wpm)
-        self.wpm_spin.blockSignals(False)
-    
-    def update_speed_from_spinbox(self):
-        """Called when user types in the box"""
-        self.wpm = self.wpm_spin.value()
-        self.slider.blockSignals(True)
-        self.slider.setValue(self.wpm)
-        self.slider.blockSignals(False)
     
     def jump_to_percentage(self):
         if not self.words: return
