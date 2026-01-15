@@ -235,7 +235,6 @@ class RSVPWidget(QWidget):
         self.font = QFont("Consolas", self.max_font_size, QFont.Weight.Bold)
         self.metrics = QFontMetrics(self.font)
         
-        # Lower minimum height to accommodate small screens
         self.setMinimumHeight(80) 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
@@ -262,7 +261,7 @@ class RSVPWidget(QWidget):
         # 1. Height: Text should occupy ~40% of height to leave room for markers/bar
         # 2. Width: Assume a long word (approx 15 chars) needs to fit
         target_h = int(h * 0.4)
-        target_w = int(w / 12) 
+        target_w = int(w / 15)
         
         new_size = min(self.max_font_size, target_h, target_w)
         new_size = max(14, new_size) # Absolute minimum legibility

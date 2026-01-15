@@ -111,7 +111,7 @@ class WordDisplay(QMainWindow):
         
         # --- Top Bar ---
         top = QHBoxLayout()
-        self.btn_open = QPushButton("Open Book")
+        self.btn_open = QPushButton("Open")
         self.btn_open.setFixedSize(100, 30)
         self.btn_open.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_open.clicked.connect(self.open_file_dialog)
@@ -603,12 +603,6 @@ class WordDisplay(QMainWindow):
             
         # If we didn't hit a control panel, toggle reading
         self.toggle_reading()
-            
-    def mouseDoubleClickEvent(self, e):
-        if self.isFullScreen():
-            self.showNormal()
-        else:
-            self.showFullScreen()
 
     def closeEvent(self, e):
         self.persist_state()
