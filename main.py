@@ -458,7 +458,6 @@ class WordDisplay(QMainWindow):
         self.loading_bar.setValue(0)
         self.loading_label.setText(f"Loading {os.path.basename(file_path)}...")
         self.loading_container.setVisible(True)
-        self.central_widget.setEnabled(False)
         self.loader_thread = BookLoader(file_path)
         self.loader_thread.progress_updated.connect(self.loading_bar.setValue)
         self.loader_thread.finished_loading.connect(lambda w, c, p, f: self.on_book_loaded(w, c, p, f, file_path))
@@ -468,7 +467,6 @@ class WordDisplay(QMainWindow):
 
     def reset_loading_ui(self):
         self.loading_container.setVisible(False)
-        self.central_widget.setEnabled(True)
         self.setFocus()
 
     def on_book_loaded(self, words, chapters, page_map, footnotes, file_path):
