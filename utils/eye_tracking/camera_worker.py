@@ -23,7 +23,7 @@ class EyeTrackingWorker(QThread):
             print(f"CRITICAL: Camera init failed: {e}")
             return
 
-        print("EyeTrackingWorker: Started") # Debug print
+        print("EyeTrackingWorker: Started") 
 
         while self.running:
             try:
@@ -37,11 +37,10 @@ class EyeTrackingWorker(QThread):
                 
                 # Guard against None if detection fails completely
                 if avg_ratio is None:
-                    # Send frame but indicate no eyes found
-                    self.update_signal.emit(frame, None, True, 0.0)
-                    continue
-
-                eyes_off, limit_ratio = self.tracker.check_gaze(avg_ratio)
+                    eyes_off = True
+                    limit_ratio = None
+                else:
+                    eyes_off, limit_ratio = self.tracker.check_gaze(avg_ratio)
                 
                 # 3. Emit Data
                 self.update_signal.emit(frame, avg_ratio, eyes_off, limit_ratio)

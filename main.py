@@ -196,13 +196,9 @@ class WordDisplay(QMainWindow):
         self.context_display.scrolled.connect(self.on_context_scroll)
         self.display_layout.addWidget(self.context_display, stretch=1)
 
-        # --- MODIFICATION START ---
-        # Insert a strong spacer here to push the RSVP widget to the bottom.
-        # This creates the physical gap needed for the eye tracker to distinct 
-        # between looking "UP" (Context) and looking "DOWN" (Reading).
+        # Adjust spacer here for pi layout
         if is_raspberry_pi():
-            self.display_layout.addStretch(5) 
-        # --------------------------
+            self.display_layout.addStretch(4)
 
         self.rsvp_display = RSVPWidget()
         self.rsvp_display.set_flank_opacity(self.flank_opacity)
@@ -413,27 +409,22 @@ class WordDisplay(QMainWindow):
 
     def on_eye_data(self, frame, avg_ratio, eyes_off, limit_ratio):
         """
-        Received fresh data from the background thread.
-        This runs on the Main UI Thread, so update widgets here.
+        Main UI Thread handler. 
+        Reacts to the flags raised by the background eye tracker.
         """
         # 1. Ping Indicator
         if hasattr(self, 'cam_indicator'):
             self.cam_indicator.ping()
 
-        # 2. Handle Calibration Request
+        # 2. Handle Calibration
         if self.calibration_requested and avg_ratio is not None:
             self.eye_worker.calibrate(avg_ratio)
             self.calibration_requested = False
             
-            # --- FIX STARTS HERE ---
-            # We just calibrated. The 'eyes_off' variable passed to this function 
-            # was calculated using the OLD calibration (or no calibration).
-            # We must override it to False, otherwise the app will immediately 
-            # switch to "Gaze Paused" (Orange) before the new calibration takes effect.
+            # FIX: Ensure we don't pause on the exact frame we calibrate
             eyes_off = False 
-            # --- FIX ENDS HERE ---
 
-            # Tutorial Auto-Advance
+            # Tutorial Logic
             if hasattr(self, 'tutorial') and self.tutorial.isVisible():
                 current_msg = self.tutorial.steps[self.tutorial.current_step][1]
                 if current_msg == "EYE_CALIB":
@@ -444,17 +435,20 @@ class WordDisplay(QMainWindow):
         if self.debug_window and self.debug_window.isVisible():
             self.debug_window.update_frame(frame, avg_ratio, limit_ratio, eyes_off)
 
-        # 4. Logic Control (Pause/Resume)
-        if eyes_off:
-            if not self.is_gaze_paused:
-                self.is_gaze_paused = True
-                self.rsvp_display.set_status(2) # Orange
-        else:
-            # If we are running but paused by gaze, resume now
-            if self.is_running and self.is_gaze_paused:
-                self.is_gaze_paused = False
-                self.rsvp_display.set_status(1) # Green
-                self.schedule_next_word()
+        # 4. Gaze Control Logic
+        # We only apply eye tracking if the user has actually started reading
+        if self.is_running:
+            if eyes_off:
+                # PAUSE: User looked up OR eyes were lost
+                if not self.is_gaze_paused:
+                    self.is_gaze_paused = True
+                    self.rsvp_display.set_status(2) # Orange
+            else:
+                # RESUME: Eyes are detected and looking at the target
+                if self.is_gaze_paused:
+                    self.is_gaze_paused = False
+                    self.rsvp_display.set_status(1) # Green
+                    self.schedule_next_word()
     
     def on_tutorial_finished(self):
         complete_first_run()
@@ -545,39 +539,38 @@ class WordDisplay(QMainWindow):
         QTimer.singleShot(0, self.update_overlay_positions)
     
     def open_file_dialog(self):
-         # 1. PAUSE CAMERA (Crucial!)
          # Stop the update loop so it doesn't fight the dialog for resources
          was_tracking = False
          if self.eye_worker and self.eye_worker.isRunning():
             self.eye_worker.stop()
-            self.eye_worker.wait() # FIX: Wait for thread to finish and release camera
+            self.eye_worker.wait()
             was_tracking = True
  
          # 2. Capture state
          self.intended_fullscreen = self.isFullScreen()
          if self.file_path: self.persist_state()
          if self.is_running: self.toggle_reading()
+         # We can pass a "neutral" option. Since QFD expects a bitmask, 0 works.
+         options = QFileDialog.Option(0)
          
-         # 3. Open Dialog with "DontUseNativeDialog"
-         # This prevents the OS window manager from creating a separate window surface
-         # which often causes the "ghost window" bug on Pi/Linux.
+         if is_raspberry_pi():
+             options = QFileDialog.Option.DontUseNativeDialog
+         
+         # Don't use native on pi
          file_path, _ = QFileDialog.getOpenFileName(
              self, 
              "Open Book", 
              "", 
              "Books (*.epub *.pdf);;EPUB Files (*.epub);;PDF Files (*.pdf)",
-             options=QFileDialog.Option.DontUseNativeDialog
+             options=options
          )
          
-         # 4. Restore Fullscreen immediately to prevent flickering
          if self.intended_fullscreen:
              self.showFullScreen()
  
-         # 5. Load Book if selected
          if file_path: 
              self.load_book(os.path.abspath(file_path))
              
-         # 6. RESUME CAMERA
          if was_tracking:
             self.start_eye_tracking()
 
