@@ -21,7 +21,7 @@ class TutorialOverlay(QWidget):
         
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, False)
-        self.resize(parent.size())
+        # Note: We do not call self.resize() here; main.py sets geometry
         
         # Main Message Container
         self.msg_container = QFrame(self)
@@ -53,7 +53,7 @@ class TutorialOverlay(QWidget):
         self.lbl_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.main_layout.addWidget(self.lbl_msg)
 
-        # Graphical Area
+        # Graphical Area (Hotkeys)
         self.graphic_area = QWidget()
         self.graphic_layout = QVBoxLayout(self.graphic_area)
         self.graphic_layout.setContentsMargins(0, 0, 0, 0)
@@ -110,7 +110,7 @@ class TutorialOverlay(QWidget):
         key_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         key_lbl.setFixedSize(50, 40)
         key_lbl.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        # Visual styling to look like a keyboard key
+        
         key_lbl.setStyleSheet("""
             background-color: #444;
             border: 1px solid #888;
@@ -118,8 +118,9 @@ class TutorialOverlay(QWidget):
             border-radius: 6px;
             color: white;
         """)
+        
         if key_text == "SPACE":
-            key_lbl.setFixedWidth(160) # Wider for spacebar
+            key_lbl.setFixedWidth(160) 
 
         desc_lbl = QLabel(desc_text)
         desc_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -132,7 +133,6 @@ class TutorialOverlay(QWidget):
 
     def build_hotkey_layout(self):
         """Builds the graphical keyboard layout"""
-        # Clear previous if any
         if self.graphic_area.layout():
             QWidget().setLayout(self.graphic_area.layout())
             self.graphic_layout = QVBoxLayout(self.graphic_area)
@@ -150,9 +150,30 @@ class TutorialOverlay(QWidget):
         self.graphic_layout.addLayout(grid)
 
     def center_msg_box(self):
+        """Centers message, but jumps out of the way of highlighted widgets"""
         self.msg_container.adjustSize()
+        
+        # Default Center
         center_x = (self.width() - self.msg_container.width()) // 2
         center_y = (self.height() - self.msg_container.height()) // 2
+        
+        # Smart Positioning: Check for overlap with current target
+        if self.current_step < len(self.steps):
+            target_widget, _ = self.steps[self.current_step]
+            if target_widget and target_widget.isVisible():
+                global_pos = target_widget.mapToGlobal(QPoint(0, 0))
+                local_pos = self.mapFromGlobal(global_pos)
+                target_rect = QRect(local_pos, target_widget.size())
+                
+                msg_rect = QRect(center_x, center_y, self.msg_container.width(), self.msg_container.height())
+                
+                if msg_rect.intersects(target_rect):
+                    # Overlap detected. Move box to top or bottom depending on target Y
+                    if target_rect.center().y() > self.height() // 2:
+                        center_y = 50 # Move to top
+                    else:
+                        center_y = self.height() - self.msg_container.height() - 50 # Move to bottom
+                        
         self.msg_container.move(center_x, center_y)
 
     def update_content(self):
@@ -221,7 +242,7 @@ class TutorialOverlay(QWidget):
             painter.drawRoundedRect(target_rect, 5, 5)
 
     def resizeEvent(self, event):
-        if self.parent_widget:
-            self.resize(self.parent_widget.size())
+        # FIX: Do NOT call self.resize(parent.size()) here. 
+        # The parent (main.py) manages our geometry via its own resizeEvent.
         self.center_msg_box()
         super().resizeEvent(event)

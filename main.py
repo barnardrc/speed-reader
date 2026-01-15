@@ -325,26 +325,34 @@ class WordDisplay(QMainWindow):
             self.ai_panel.collapse()    
     
     def start_tutorial(self):
-        # Prevent multiple instances
         if hasattr(self, 'tutorial') and self.tutorial.isVisible():
             return
+
+        # Handle responsive visibility for the 'Visuals' step
+        if self.controls.visual_frame.isVisible():
+            visual_target = self.controls.visual_frame
+        else:
+            visual_target = self.controls.btn_visuals
 
         steps = [
             (self.btn_open, "Start here! Click 'Open Book' to load an EPUB or PDF."),
             (self.sidebar, "This sidebar displays chapters. Click any chapter to jump directly to it."),
             (self.btn_menu, "Need more space? Click 'List' to toggle the chapter sidebar visibility."),
-            (self.queue_monitor, "This is the AI Queue Monitor. It provides extra information about when AI is processing requests."),
+            (self.queue_monitor, "This is the AI Queue Monitor. It shows when the AI is reading or thinking."),
             (self.page_spin, "Know the exact page? Type it here to jump instantly."),
             (self.pct_btn, "Or use the percentage jump to navigate through the book."),
-            (self.btn_footnote, "If a page has footnotes, this button lights up. Click to read them without losing your place."),
-            (self.slider, "Speed Control (WPM). Use Up/Down arrow keys while reading to adjust this on the fly."),
-            (self.display_controls_container, "Customize your view.\nContext: Context visibility.\nFlank: Side-word visibility.\nRange: How much context to show."),
-            (self.btn_pauses, "Smart Pauses: Configure how long the reader pauses on commas, periods, and headers."),
-            (self.btn_ai_settings, "Configure your local LLM (Ollama) or adjust how often the AI reads the text for context."),
-            (None, "HOTKEYS") # Triggers the graphical hotkey layout
+            (self.btn_footnote, "If a page has footnotes, this button lights up. Click to read them."),
+            (self.controls.wpm_slider, "Speed Control (WPM). Use Up/Down arrow keys while reading to adjust this on the fly."),
+            (visual_target, "Customize your view.\nAdjust Context, Flank words, and Range visibility here."),
+            (self.controls.btn_pauses, "Smart Pauses: Configure how long the reader pauses on commas, periods, and headers."),
+            (self.controls.btn_ai, "Configure your local LLM (Ollama) or adjust how often the AI reads the text."),
+            (None, "HOTKEYS") 
         ]
         
         self.tutorial = TutorialOverlay(self.central_widget, steps)
+        
+        self.tutorial.setGeometry(self.central_widget.rect()) 
+        
         self.tutorial.finished.connect(self.on_tutorial_finished)
         self.tutorial.show()
 
