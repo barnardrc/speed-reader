@@ -23,6 +23,7 @@ from utils.ai import SequentialAIWorker, AIQuestionPanel, EntityPanel
 from utils.ai_backend import AIBackendManager
 from utils.settings import load_settings, save_settings, PAUSE_CONFIG, complete_first_run
 from utils.book_loader import BookLoader
+from utils.eye_tracking.camera_worker import EyeTrackingWorker
 
 # UI Components
 from ui.dialogs import PauseSettingsDialog, AISettingsDialog, FootnoteDialog
@@ -318,50 +319,6 @@ class WordDisplay(QMainWindow):
             # Wait for full render
             QTimer.singleShot(500, self.start_tutorial)
     
-    def process_eye_tracking(self):
-        if not self.eye_tracker: return
-        
-        # 1. Get Frame
-        frame = self.eye_tracker.get_frame()
-        if frame is None: return
-
-        # Ping Indicator (Green Dot logic)
-        if hasattr(self, 'cam_indicator'):
-            self.cam_indicator.ping()
-
-        # 2. Detect Pupils (Returns RATIO now)
-        frame, avg_ratio = self.eye_tracker.detect_pupils(frame)
-        
-        # 3. Calibration
-        if self.calibration_requested and avg_ratio is not None:
-            self.eye_tracker.calibrate(avg_ratio)
-            self.calibration_requested = False
-            
-            # Tutorial Auto-Advance
-            if hasattr(self, 'tutorial') and self.tutorial.isVisible():
-                current_msg = self.tutorial.steps[self.tutorial.current_step][1]
-                if current_msg == "EYE_CALIB":
-                    self.tutorial.next_step()
-                    if self.is_running: self.toggle_reading()
-
-        # 4. Check Gaze
-        eyes_off, limit_ratio = self.eye_tracker.check_gaze(avg_ratio)
-        
-        # 5. Update Debug Window (Pass Ratios)
-        if self.debug_window and self.debug_window.isVisible():
-            self.debug_window.update_frame(frame, avg_ratio, limit_ratio, eyes_off)
-
-        # 6. Logic Control
-        if eyes_off:
-            if not self.is_gaze_paused:
-                self.is_gaze_paused = True
-                self.rsvp_display.set_status(2) # Orange
-        else:
-            if self.is_gaze_paused:
-                self.is_gaze_paused = False
-                self.rsvp_display.set_status(1) # Green
-                self.schedule_next_word()
-    
     def check_sidebar_mode(self):
         is_small = self.width() < 750
         is_in_layout = self.main_layout.indexOf(self.sidebar) != -1
@@ -424,7 +381,6 @@ class WordDisplay(QMainWindow):
         ]
         
         self.eye_tracker = None
-        self.et_timer = QTimer()
         
         if is_raspberry_pi():
             steps.append((self.rsvp_display, "Tap anywhere in this area to Play or Pause reading."))
@@ -437,8 +393,10 @@ class WordDisplay(QMainWindow):
                 self.eye_tracker = EyeTracker()
                 print("Eye Tracker Initialized Successfully.")
             
-                self.et_timer.timeout.connect(self.process_eye_tracking)
-                self.et_timer.start(33)
+                # --- EYE TRACKER INITIALIZATION ---
+                self.eye_worker = None
+        
+                self.start_eye_tracking()
                 
             except Exception as e:
                 print(f"Eye Tracker Warning: {e}")
@@ -453,7 +411,48 @@ class WordDisplay(QMainWindow):
         
         self.tutorial.finished.connect(self.on_tutorial_finished)
         self.tutorial.show()
+    
+    def start_eye_tracking(self):
+        self.eye_worker = EyeTrackingWorker()
+        self.eye_worker.update_signal.connect(self.on_eye_data)
+        self.eye_worker.start()
 
+    def on_eye_data(self, frame, avg_ratio, eyes_off, limit_ratio):
+        """
+        Received fresh data from the background thread.
+        This runs on the Main UI Thread, so update widgets here.
+        """
+        # 1. Ping Indicator
+        if hasattr(self, 'cam_indicator'):
+            self.cam_indicator.ping()
+
+        # 2. Handle Calibration Request
+        if self.calibration_requested and avg_ratio is not None:
+            self.eye_worker.calibrate(avg_ratio)
+            self.calibration_requested = False
+            
+            # Tutorial Auto-Advance
+            if hasattr(self, 'tutorial') and self.tutorial.isVisible():
+                current_msg = self.tutorial.steps[self.tutorial.current_step][1]
+                if current_msg == "EYE_CALIB":
+                    self.tutorial.next_step()
+                    if self.is_running: self.toggle_reading()
+
+        # 3. Update Debug Window
+        if self.debug_window and self.debug_window.isVisible():
+            self.debug_window.update_frame(frame, avg_ratio, limit_ratio, eyes_off)
+
+        # 4. Logic Control (Pause/Resume)
+        if eyes_off:
+            if not self.is_gaze_paused:
+                self.is_gaze_paused = True
+                self.rsvp_display.set_status(2) # Orange
+        else:
+            if self.is_gaze_paused:
+                self.is_gaze_paused = False
+                self.rsvp_display.set_status(1) # Green
+                self.schedule_next_word()
+    
     def on_tutorial_finished(self):
         complete_first_run()
         QMessageBox.information(self, "Ready", "You're all set! Open a book and press SPACE to start reading.")
@@ -545,8 +544,10 @@ class WordDisplay(QMainWindow):
     def open_file_dialog(self):
          # 1. PAUSE CAMERA (Crucial!)
          # Stop the update loop so it doesn't fight the dialog for resources
-         if hasattr(self, 'et_timer') and self.et_timer.isActive():
-             self.et_timer.stop()
+         was_tracking = False
+         if self.eye_worker and self.eye_worker.isRunning():
+            self.eye_worker.stop()
+            was_tracking = True
  
          # 2. Capture state
          self.intended_fullscreen = self.isFullScreen()
@@ -573,8 +574,8 @@ class WordDisplay(QMainWindow):
              self.load_book(os.path.abspath(file_path))
              
          # 6. RESUME CAMERA
-         if hasattr(self, 'et_timer'):
-             self.et_timer.start(33)
+         if was_tracking:
+            self.start_eye_tracking()
 
     def load_book(self, file_path):
         print(f"Loading: {file_path}")
@@ -819,9 +820,9 @@ class WordDisplay(QMainWindow):
             self.ai_worker.stop()
             self.ai_worker.wait(2000)
             
-        # Release Camera
-        if self.eye_tracker:
-            self.eye_tracker.release()
+        # STOP CAMERA WORKER
+        if self.eye_worker:
+            self.eye_worker.stop()
             
         e.accept()
 
