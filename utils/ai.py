@@ -13,7 +13,8 @@ from PyQt6.QtCore import (QThread, pyqtSignal, Qt, QPropertyAnimation,
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QTextEdit, 
     QPushButton, QTabWidget, QFrame, QTextBrowser, QProgressBar, 
-    QListWidget, QListWidgetItem, QMenu, QSizePolicy
+    QListWidget, QListWidgetItem, QMenu, QSizePolicy, QStackedWidget,
+    QHBoxLayout
 )
 from PyQt6.QtGui import QFont
 
@@ -119,48 +120,51 @@ class QuestionTab(QWidget):
         self.context_text = context_text
         self.question_text = question_text
         
+        # Main layout
         self.layout = QVBoxLayout()
-        self.layout.setContentsMargins(15, 15, 15, 15)
+        self.layout.setContentsMargins(10, 10, 10, 10)
+        self.layout.setSpacing(10)
         self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.setLayout(self.layout)
 
+        # Question Label
         self.lbl_q = QLabel(question_text)
         self.lbl_q.setWordWrap(True)
-        self.lbl_q.setFont(QFont("Arial", 14, QFont.Weight.Bold))
-        self.lbl_q.setStyleSheet("color: #e0e0e0; margin-bottom: 10px; background: transparent;")
+        self.lbl_q.setFont(QFont("Arial", 13, QFont.Weight.Bold))
+        self.lbl_q.setStyleSheet("color: #e0e0e0; background: transparent;")
         self.layout.addWidget(self.lbl_q)
 
-        self.txt_answer = SubmitTextEdit()
-        self.txt_answer.setPlaceholderText("Type reflection (Enter to submit)...")
-        self.txt_answer.setFixedHeight(100)
-        self.txt_answer.setFont(QFont("Arial", 13))
+        # Answer Input
+        self.txt_answer = SubmitTextEdit() 
+        self.txt_answer.setPlaceholderText("Type reflection...")
+        self.txt_answer.setFixedHeight(80) # Slightly shorter for RPi
+        self.txt_answer.setFont(QFont("Arial", 12))
         self.txt_answer.setStyleSheet("QTextEdit { background-color: rgba(43, 43, 43, 200); color: #ffffff; border: 1px solid #555; border-radius: 4px; padding: 5px; }")
         self.txt_answer.submit_pressed.connect(self.on_submit) 
         self.layout.addWidget(self.txt_answer)
 
+        # Loader
         self.loader = QProgressBar()
-        self.loader.setRange(0, 0)
         self.loader.setFixedHeight(4)
+        self.loader.setTextVisible(False)
         self.loader.hide()
         self.layout.addWidget(self.loader)
 
+        # Feedback Area
         self.txt_feedback = QTextBrowser()
         self.txt_feedback.hide()
-        self.txt_feedback.setStyleSheet("""
-            QTextBrowser { 
-                background-color: rgba(34, 34, 34, 200); 
-                color: #ccc; 
-                border: 1px solid #444; 
-                border-radius: 4px; 
-                padding: 10px; 
-            }
-        """)
+        self.txt_feedback.setStyleSheet("background-color: rgba(34, 34, 34, 200); color: #ccc; border: 1px solid #444; border-radius: 4px; padding: 5px;")
         self.layout.addWidget(self.txt_feedback)
 
-        self.btn_action = QPushButton("Submit Answer")
+        # Action Button
+        self.btn_action = QPushButton("Submit")
+        self.btn_action.setFixedHeight(40)
         self.btn_action.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_action.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        self.btn_action.setStyleSheet("QPushButton { background-color: #4a90e2; color: white; border: none; padding: 10px; border-radius: 4px; } QPushButton:hover { background-color: #357abd; } QPushButton:disabled { background-color: #555; color: #888; }")
+        self.btn_action.setStyleSheet("""
+            QPushButton { background-color: #4a90e2; color: white; border: none; border-radius: 4px; font-weight: bold; font-size: 14px; } 
+            QPushButton:hover { background-color: #357abd; } 
+            QPushButton:disabled { background-color: #555; color: #888; }
+        """)
         self.btn_action.clicked.connect(self.on_submit)
         self.layout.addWidget(self.btn_action)
 
@@ -170,56 +174,28 @@ class QuestionTab(QWidget):
 
         self.txt_answer.setDisabled(True)
         self.btn_action.setDisabled(True)
-        self.btn_action.setText("Waiting for Queue...")
+        self.btn_action.setText("Analyzing...")
         self.loader.show()
         
         prompt = (
-            f"Context: \"{self.context_text}\"\n"
-            f"Question: \"{self.question_text}\"\n"
-            f"User Answer: \"{user_ans}\"\n\n"
-            f"Task: Provide a micro-feedback summary (max 3-4 sentences) on the user's answer.\n"
-            f"Constraints: Be concise. No tables. No long paragraphs.\n"
-            f"Tone: Direct, encouraging, and brief.\n\n"
-            f"Instructions:\n"
-            f"1. Verdict First: Immediately validate if the answer is correct, partially correct, or incorrect.\n"
-            f"2. The 'One Thing': If they missed something, provide only the single most important missing fact from the context. Do not list everything.\n"
-            f"3. No Fluff: Do not use pleasantries like 'Thank you for your answer' or 'That is an interesting thought'. Jump straight to the point.\n"
-            f"4. Formatting: Use **bold** for key terms to make it skimmable.\n"
-            f"5. Closure: End with a short confirming statement. Do not ask follow-up questions."
+            f"Context: \"{self.context_text}\"\nQuestion: \"{self.question_text}\"\nUser Answer: \"{user_ans}\"\n\n"
+            f"Task: Micro-feedback (max 3 sentences). 1. Verdict (Correct/Incorrect). 2. Missing Key Fact. 3. Closure.\n"
+            f"Format: Use **bold** for key terms."
         )
-        
         self.validation_requested.emit(prompt, self.context_text, self.tab_id)
 
     def apply_feedback(self, response):
-        """Called by parent when worker finishes"""
         self.loader.hide()
-        
         if "Error" in response:
-             self.btn_action.setText("Error. Try Again")
+             self.btn_action.setText("Retry")
              self.btn_action.setEnabled(True)
              self.txt_answer.setDisabled(False)
         else:
-            html_body = markdown.markdown(response, extensions=['tables'])
-            css_style = """
-            <style>
-                body { 
-                    font-family: Arial; 
-                    font-size: 16pt; 
-                    line-height: 1.6; 
-                    color: #ccc; 
-                }
-                p { margin-bottom: 12px; }
-                strong { color: #fff; }
-                ul { margin-bottom: 12px; margin-left: -20px; }
-            </style>
-            """
-            
-            styled_html = f"{css_style}<div>{html_body}</div>"
-            
+            html_body = markdown.markdown(response)
+            styled_html = f"<style>body {{ font-family: Arial; font-size: 14px; color: #ccc; }} strong {{ color: #fff; }}</style><div>{html_body}</div>"
             self.txt_feedback.setHtml(styled_html)
-
             self.txt_feedback.show()
-            self.btn_action.setText("Dismiss / Done")
+            self.btn_action.setText("Done")
             self.btn_action.setEnabled(True)
             try: self.btn_action.clicked.disconnect()
             except: pass
@@ -227,228 +203,297 @@ class QuestionTab(QWidget):
             
 class AIQuestionPanel(QFrame):
     submit_task_signal = pyqtSignal(str, dict)
+    panel_toggled = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedWidth(500)
-        self.is_resizing = False
-        self.resize_margin = 15
-        self.min_height = 150
-        self.max_height = 1000
-        self.current_height = 600
-        self.anchor_y = 0
-        self.global_anchor_y = 0
+        self.setFixedWidth(500) # Default, but user can resize
+        self.current_height = 500
         self.collapsed_height = 40
-        
         self.is_expanded = False
         
+        # Resize logic variables
+        self.is_resizing_h = False
+        self.is_resizing_w = False
+        self.resize_margin = 15
+
         self.setMouseTracking(True)
+        self.setStyleSheet("background-color: rgba(30, 30, 30, 0); border: 1px solid #555; border-radius: 8px;")
 
-        self.default_style = """
-            AIQuestionPanel {
-                background-color: rgba(30, 30, 30, 0);
-                border: 1px solid #444;
-                border-bottom: none;
-                border-top-left-radius: 10px;
-                border-top-right-radius: 10px;
-            }
-        """
-        self.setStyleSheet(self.default_style)
-        
-        layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        self.setLayout(layout)
-        
-        self.content_area = QWidget()
-        self.content_layout = QVBoxLayout()
-        self.content_layout.setContentsMargins(0, self.resize_margin, 0, 0)
-        self.content_area.setLayout(self.content_layout)
-        
-        self.content_area.setStyleSheet("background-color: rgba(30, 30, 30, 150); border-radius: 5px;")
-        
-        lbl = QLabel("  Comprehension Stack")
-        lbl.setFixedHeight(30)
-        lbl.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        lbl.setStyleSheet("color: #aaa; background: transparent; padding-left: 10px; border-bottom: 1px solid #444;")
-        self.content_layout.addWidget(lbl)
+        # --- Master Layout ---
+        self.main_layout = QVBoxLayout()
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
+        self.setLayout(self.main_layout)
 
-        self.tabs = QTabWidget()
-        self.tabs.setTabPosition(QTabWidget.TabPosition.West)
-        self.tabs.setStyleSheet("""
-            QTabWidget::pane { border: none; background: transparent; }
-            QTabWidget::tab-bar { alignment: left; }
-            QTabBar::tab {
-                background: rgba(60, 60, 60, 100); 
-                color: #aaa;
-                padding: 12px 6px;
-                margin-bottom: 2px;
-                border-top-left-radius: 4px;
-                border-bottom-left-radius: 4px;
-                font-size: 13px;
-                min-height: 40px;
-            }
-            QTabBar::tab:selected { background: rgba(74, 144, 226, 200); color: white; }
-        """)
-        self.tabs.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.content_layout.addWidget(self.tabs)
-        layout.addWidget(self.content_area, stretch=1)
+        # --- Content Container (Hidden when collapsed) ---
+        self.content_container = QWidget()
+        self.content_container.setStyleSheet("background-color: rgba(30, 30, 30, 240); border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;")
+        
+        # Horizontal layout: [Sidebar] | [Stacked Pages]
+        self.h_layout = QHBoxLayout()
+        self.h_layout.setContentsMargins(0, 0, 0, 0)
+        self.h_layout.setSpacing(0)
+        self.content_container.setLayout(self.h_layout)
 
+        # 1. Sidebar (Custom Buttons)
+        self.sidebar = QWidget()
+        self.sidebar.setFixedWidth(120) # Starts wide
+        self.sidebar.setStyleSheet("background-color: rgba(45, 45, 45, 255); border-right: 1px solid #555;")
+        self.sidebar_layout = QVBoxLayout()
+        self.sidebar_layout.setContentsMargins(5, 10, 5, 10)
+        self.sidebar_layout.setSpacing(5)
+        self.sidebar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.sidebar.setLayout(self.sidebar_layout)
+        
+        self.h_layout.addWidget(self.sidebar)
+
+        # 2. Stacked Widget (The Content)
+        self.stack = QStackedWidget()
+        self.h_layout.addWidget(self.stack)
+
+        self.main_layout.addWidget(self.content_container)
+
+        # --- Header Bar (Always Visible) ---
         self.header_bar = QFrame()
         self.header_bar.setFixedHeight(40)
-        self.header_bar.setStyleSheet("background: rgba(30, 30, 30, 180); border-top: 1px solid #444; border-radius: 0px;")
-        hb_layout = QVBoxLayout()
-        hb_layout.setContentsMargins(0,0,0,0)
+        self.header_bar.setStyleSheet("background: rgba(40, 40, 40, 255); border-top: 1px solid #666; border-radius: 0px;")
+        hb_layout = QHBoxLayout()
+        hb_layout.setContentsMargins(10, 0, 10, 0)
         self.header_bar.setLayout(hb_layout)
+
         self.header_btn = QPushButton("▲ Comprehension Stack")
-        self.header_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.header_btn.setFont(QFont("Arial", 11, QFont.Weight.Bold))
-        self.header_btn.setStyleSheet("""
-            QPushButton {
-                text-align: right;
-                padding-right: 15px;
-                background: transparent;
-                border: none;
-                color: #aaa;
-            }
-            QPushButton:hover {
-                color: #ffffff;
-            }
-        """)
+        self.header_btn.setStyleSheet("border: none; color: #aaa; font-weight: bold; text-align: right;")
         self.header_btn.clicked.connect(self.toggle_expand)
         hb_layout.addWidget(self.header_btn)
         
-        layout.addWidget(self.header_bar, stretch=0)
-        
-        self.question_count = 0
-        self.content_area.hide() 
+        self.main_layout.addWidget(self.header_bar)
 
+        self.content_container.hide()
+        self.question_count = 0
+        self.buttons = [] # Store references to sidebar buttons
+        
+        self.max_width = 500
+        self.button_width = 80
+        self.button_mode = False
+        self.anchor_y = 0
+        self.global_anchor_y = 0
+        self.closed_x = 0
+    
+    def collapse(self):
+        """Helper to force close from outside"""
+        if self.is_expanded:
+            self.toggle_expand()
+    
     def place_panel(self, x, bottom_y, global_bottom_y):
         self.anchor_y = bottom_y
         self.global_anchor_y = global_bottom_y
+        self.closed_x = x # Save anchor
+        
         h = self.current_height if self.is_expanded else self.collapsed_height
-        new_y = self.anchor_y - h
-        self.setGeometry(x, new_y, self.width(), h)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            if event.position().y() <= self.resize_margin and self.is_expanded:
-                self.is_resizing = True
-                event.accept()
-                return
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        if self.is_expanded and event.position().y() <= self.resize_margin:
-            self.setCursor(Qt.CursorShape.SizeVerCursor)
-        elif event.position().y() >= self.height() - 40:
-            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        
+        if self.is_expanded and self.button_mode:
+            w = self.parent().width() - 20
+            actual_x = 10
         else:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
+            w = self.max_width if self.is_expanded else (self.button_width if self.button_mode else self.max_width)
+            actual_x = x
+            
+        self.setGeometry(actual_x, self.anchor_y - h, w, h)
+    
+    def set_button_mode(self, enabled):
+        if self.button_mode == enabled: return
+        self.button_mode = enabled
+        
+        # Force Sidebar to match
+        self.set_compact_mode(enabled)
+        
+        if not self.is_expanded:
+            w = self.button_width if enabled else self.max_width
+            txt = "AI" if enabled else "▲ Comprehension Stack"
+            self.setFixedWidth(w)
+            self.header_btn.setText(txt)
+            
+    def add_question(self, question, context):
+        self.question_count += 1
+        
+        # Create Content Page
+        page = QuestionTab(question, context)
+        page.validation_requested.connect(self.handle_tab_validation)
+        page.closed.connect(self.remove_question)
+        
+        # Create Sidebar Button
+        btn_text = f"Q{self.question_count}"
+        btn = QPushButton(btn_text)
+        btn.setCheckable(True)
+        btn.setFixedHeight(40)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Store metadata on button
+        btn.setProperty("page_widget", page) 
+        btn.setProperty("full_text", f"Question {self.question_count}")
+        btn.setProperty("short_text", f"Q{self.question_count}")
+        
+        btn.clicked.connect(lambda: self.switch_to_page(btn))
+        
+        self.sidebar_layout.addWidget(btn)
+        self.stack.addWidget(page)
+        self.buttons.append(btn)
+        
+        # Auto-select if first
+        if len(self.buttons) == 1:
+            btn.setChecked(True)
+            self.switch_to_page(btn)
 
-        if self.is_resizing:
-            global_mouse_y = event.globalPosition().y()
-            new_h = self.global_anchor_y - global_mouse_y
-            new_h = max(self.min_height, min(self.max_height, new_h))
-            self.current_height = int(new_h)
-            self.setGeometry(self.x(), self.anchor_y - self.current_height, self.width(), self.current_height)
-            event.accept()
-        else:
-            super().mouseMoveEvent(event)
+        self.update_sidebar_style()
+        self.flash_update()
 
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.is_resizing = False
-        super().mouseReleaseEvent(event)
+    def switch_to_page(self, clicked_btn):
+        # Enforce radio behavior
+        for btn in self.buttons:
+            btn.setChecked(False)
+        clicked_btn.setChecked(True)
+        
+        page = clicked_btn.property("page_widget")
+        self.stack.setCurrentWidget(page)
+
+    def remove_question(self, widget):
+        # Find button associated with this widget
+        btn_to_remove = None
+        for btn in self.buttons:
+            if btn.property("page_widget") == widget:
+                btn_to_remove = btn
+                break
+        
+        if btn_to_remove:
+            self.sidebar_layout.removeWidget(btn_to_remove)
+            btn_to_remove.deleteLater()
+            self.buttons.remove(btn_to_remove)
+
+        self.stack.removeWidget(widget)
+        widget.deleteLater()
+
+        # Select previous if exists
+        if self.buttons:
+            self.buttons[-1].click()
+        elif self.is_expanded:
+            self.toggle_expand()
+
+    def set_compact_mode(self, is_compact):
+        """Called by parent window to force layout mode"""
+        # Only update if state actually changes to avoid flicker
+        if getattr(self, '_current_compact_state', None) == is_compact:
+            return
+            
+        self._current_compact_state = is_compact
+        self.update_sidebar_style(is_compact)
+
+    def update_sidebar_style(self, is_compact=False):
+        """Dynamic styling based on compact flag"""
+        # Adjust Sidebar Width
+        new_width = 50 if is_compact else 140
+        self.sidebar.setFixedWidth(new_width)
+
+        # Update Buttons
+        for btn in self.buttons:
+            txt = btn.property("short_text") if is_compact else btn.property("full_text")
+            btn.setText(txt)
+            
+        # CSS for buttons
+        pad = "0px" if is_compact else "10px"
+        align = "center" if is_compact else "left"
+        
+        self.sidebar.setStyleSheet(f"""
+            QWidget {{ background-color: #2d2d2d; border-right: 1px solid #444; }}
+            QPushButton {{
+                color: #aaa;
+                border: none;
+                border-left: 3px solid transparent;
+                text-align: {align};
+                padding-left: {pad};
+                background: transparent;
+                font-size: 13px;
+            }}
+            QPushButton:checked {{
+                background-color: #383838;
+                color: #4a90e2;
+                border-left: 3px solid #4a90e2;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: #383838; color: white; }}
+        """)
+
+    def resizeEvent(self, event):
+        # Auto-collapse sidebar if panel gets too narrow
+        if self.is_expanded:
+            self.update_sidebar_style()
+        super().resizeEvent(event)
+
+    # --- Passthroughs ---
+    def handle_tab_validation(self, p, c, t):
+        self.submit_task_signal.emit(p, {"type": "CHECK_ANSWER", "tab_id": t, "context": c})
+
+    def deliver_feedback(self, tab_id, response):
+        for i in range(self.stack.count()):
+            w = self.stack.widget(i)
+            if isinstance(w, QuestionTab) and w.tab_id == tab_id:
+                w.apply_feedback(response)
+                break
 
     def toggle_expand(self):
+        if self.anchor_y == 0: return
         self.is_expanded = not self.is_expanded
-        arrow = "▼" if self.is_expanded else "▲"
+        self.panel_toggled.emit(self.is_expanded)
+
+        # Text Logic
+        if self.button_mode and not self.is_expanded:
+            self.header_btn.setText("AI")
+        else:
+            arrow = "▼" if self.is_expanded else "▲"
+            self.header_btn.setText(f"{arrow} Comprehension Stack")
+
+        self.content_container.setVisible(self.is_expanded)
         
-        self.header_btn.setText(f"{arrow} Comprehension Stack")
-        
-        self.header_btn.setStyleSheet("""
-            QPushButton {
-                text-align: right;
-                padding-right: 15px;
-                background: transparent;
-                border: none;
-                color: #aaa;
-            }
-            QPushButton:hover { color: #ffffff; }
-        """)
-        
+        # Geometry Logic
         target_h = self.current_height if self.is_expanded else self.collapsed_height
         
+        if self.is_expanded and self.button_mode:
+            target_w = self.parent().width() - 20
+            target_x = 10
+        elif self.is_expanded:
+            target_w = self.max_width
+            target_x = self.closed_x
+        else:
+            # COLLAPSED STATE
+            target_w = self.button_width if self.button_mode else self.max_width
+            
+            # --- FIX: Force Right Alignment in Button Mode ---
+            if self.button_mode:
+                # Calculate X dynamically to ensure it stays on the right
+                # (Parent Width - Button Width - 10px Margin)
+                target_x = self.parent().width() - target_w - 10
+            else:
+                target_x = self.closed_x
+
         start_geo = self.geometry()
         new_y = self.anchor_y - target_h
-        end_geo = QRect(start_geo.x(), new_y, start_geo.width(), target_h)
         
+        self.setMinimumWidth(0)
+        self.setMaximumWidth(16777215) 
+
         self.geo_anim = QPropertyAnimation(self, b"geometry")
         self.geo_anim.setDuration(300)
         self.geo_anim.setStartValue(start_geo)
-        self.geo_anim.setEndValue(end_geo)
+        self.geo_anim.setEndValue(QRect(target_x, new_y, target_w, target_h))
         self.geo_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
         
         if self.is_expanded:
-            self.content_area.show()
-            self.geo_anim.start()
-        else:
-            self.geo_anim.finished.connect(self.content_area.hide)
-            self.geo_anim.start()
-            try: self.geo_anim.finished.disconnect(self._hide_finished)
-            except: pass
-            self.geo_anim.finished.connect(self._hide_finished)
-
-    def _hide_finished(self):
-        self.content_area.hide()
-        try: self.geo_anim.finished.disconnect(self._hide_finished)
-        except: pass
-
-    def add_question(self, question, context):
-        self.question_count += 1
-        tab = QuestionTab(question, context)
-        tab.validation_requested.connect(self.handle_tab_validation)
-        tab.closed.connect(self.remove_question)
-        self.tabs.addTab(tab, f"Q{self.question_count}")
-        self.flash_update()
+             self.update_sidebar_style(self.button_mode)
+             
+        self.geo_anim.start()
 
     def flash_update(self):
         if not self.is_expanded:
-            self.header_btn.setStyleSheet("""
-                QPushButton {
-                    text-align: right;
-                    padding-right: 15px;
-                    background: transparent;
-                    border: none;
-                    color: #4a90e2;
-                }
-                QPushButton:hover { color: #ffffff; }
-            """)
-
-    def remove_question(self, widget):
-        idx = self.tabs.indexOf(widget)
-        if idx != -1: 
-            self.tabs.removeTab(idx)
-        
-        if self.tabs.count() == 0 and self.is_expanded:
-            self.toggle_expand()
-
-    def handle_tab_validation(self, prompt, context, tab_id):
-        metadata = {
-            "type": "CHECK_ANSWER",
-            "tab_id": tab_id,
-            "context": context
-        }
-        self.submit_task_signal.emit(prompt, metadata)
-
-    def deliver_feedback(self, tab_id, response):
-        for i in range(self.tabs.count()):
-            widget = self.tabs.widget(i)
-            if isinstance(widget, QuestionTab) and widget.tab_id == tab_id:
-                widget.apply_feedback(response)
-                self.flash_update()
-                break
+            self.header_btn.setStyleSheet("border: none; color: #4a90e2; font-weight: bold; text-align: right;")
             
 # --- ENTITY TRACKER ---
 class DeletableListWidget(QListWidget):
@@ -470,13 +515,21 @@ class DeletableListWidget(QListWidget):
         for item in self.selectedItems(): self.takeItem(self.row(item))
 
 class EntityPanel(QFrame):
+    panel_toggled = pyqtSignal(bool)
+    
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedWidth(450)
+        self.max_width = 450 # Standard width
+        self.button_width = 80 # Width when collapsed in button mode
+        self.setFixedWidth(self.max_width)
+        
         self.is_expanded = False
+        self.button_mode = False # State flag
+        
         self.expanded_height = 300
         self.collapsed_height = 40 
         self.anchor_y = 0 
+        
         self.setStyleSheet("""
             EntityPanel {
                 background-color: rgba(30, 30, 30, 240);
@@ -497,7 +550,7 @@ class EntityPanel(QFrame):
         self.content_layout.setContentsMargins(5, 5, 5, 5)
         self.content_area.setLayout(self.content_layout)
         
-        self.list_widget = DeletableListWidget()
+        self.list_widget = DeletableListWidget() # Assuming DeletableListWidget is defined
         self.list_widget.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.list_widget.setWordWrap(True)
         self.list_widget.setStyleSheet("""
@@ -523,40 +576,90 @@ class EntityPanel(QFrame):
         self.header.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.layout.addWidget(self.header, stretch=0)
         
-        self.resize(self.width(), self.collapsed_height)
         self.anim = QPropertyAnimation(self, b"geometry")
         self.anim.setDuration(300)
         self.anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        self.anchor_y = 0
+        self.closed_x = 0
+
+    def set_button_mode(self, enabled):
+        """Called by main window resize event"""
+        if self.button_mode == enabled: return
+        self.button_mode = enabled
+        
+        # Immediate update if currently collapsed
+        if not self.is_expanded:
+            w = self.button_width if enabled else self.max_width
+            txt = "Ctx" if enabled else "Context Monitor ▲"
+            self.setFixedWidth(w)
+            self.header.setText(txt)
 
     def place_panel(self, x, bottom_y):
         self.anchor_y = bottom_y
-        current_h = self.expanded_height if self.is_expanded else self.collapsed_height
-        new_y = self.anchor_y - current_h
-        self.setGeometry(x, new_y, self.width(), current_h)
+        self.closed_x = x # Save the anchor position
+        
+        h = self.expanded_height if self.is_expanded else self.collapsed_height
+        
+        # If we are expanded in button mode, we force full width
+        if self.is_expanded and self.button_mode:
+            parent_w = self.parent().width()
+            w = parent_w - 20
+            actual_x = 10
+        else:
+            w = self.max_width if self.is_expanded else (self.button_width if self.button_mode else self.max_width)
+            actual_x = x
+
+        self.setGeometry(actual_x, self.anchor_y - h, w, h)
 
     def toggle(self):
+        if self.anchor_y == 0: return
         self.is_expanded = not self.is_expanded
-        arrow = "▼" if self.is_expanded else "▲"
-        self.header.setText(f"Context Monitor {arrow}")
+        self.panel_toggled.emit(self.is_expanded) # Emit signal
+        
+        # Text Logic
+        if self.button_mode and not self.is_expanded:
+            txt = "Ctx"
+        else:
+            arrow = "▼" if self.is_expanded else "▲"
+            txt = f"Context Monitor {arrow}"
+        self.header.setText(txt)
+
         if self.is_expanded:
             style = self.header.styleSheet()
             self.header.setStyleSheet(style.replace("color: #4a90e2;", "color: #aaa;"))
+            
         self.animate_resize()
-
+        
     def animate_resize(self):
         try: self.anim.finished.disconnect(self._hide_finished)
         except: pass
 
         target_h = self.expanded_height if self.is_expanded else self.collapsed_height
-        bottom = self.anchor_y if self.anchor_y != 0 else (self.geometry().y() + self.geometry().height())
-        new_y = bottom - target_h
-        curr_geo = self.geometry()
         
+        # EXPANSION LOGIC
+        if self.is_expanded and self.button_mode:
+            target_w = self.parent().width() - 20
+            target_x = 10
+        elif self.is_expanded:
+            target_w = self.max_width
+            target_x = self.closed_x
+        else:
+            target_w = self.button_width if self.button_mode else self.max_width
+            target_x = self.closed_x
+            
+        curr_geo = self.geometry()
+        bottom = self.anchor_y 
+        new_y = bottom - target_h
+
+        self.setMinimumWidth(0)
+        self.setMaximumWidth(16777215)
+
         self.anim.setStartValue(curr_geo)
-        self.anim.setEndValue(QRect(curr_geo.x(), new_y, curr_geo.width(), target_h))
+        self.anim.setEndValue(QRect(target_x, new_y, target_w, target_h))
         
         if self.is_expanded:
             self.content_area.show()
+            self.list_widget.scrollToBottom()
             self.anim.start()
         else:
             self.anim.finished.connect(self._hide_finished)

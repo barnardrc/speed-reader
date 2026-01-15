@@ -7,7 +7,6 @@ Created on Sat Jan 10 20:42:08 2026
 import sys
 import os
 import bisect
-import socket
 from PyQt6.QtCore import QTimer, Qt, QPoint
 from PyQt6.QtWidgets import (
     QApplication, QLabel, QVBoxLayout, QWidget, 
@@ -27,7 +26,7 @@ from utils.book_loader import BookLoader
 
 # UI Components
 from ui.dialogs import PauseSettingsDialog, AISettingsDialog, FootnoteDialog
-from ui.widgets import RSVPWidget, ContextFlowWidget, QueueMonitorWidget
+from ui.widgets import RSVPWidget, ContextFlowWidget, QueueMonitorWidget, ControlBar
 from ui.tutorial import TutorialOverlay # <--- NEW IMPORT
 
 class WordDisplay(QMainWindow):
@@ -199,76 +198,21 @@ class WordDisplay(QMainWindow):
         self.btn_footnote.setEnabled(False)
         nav.addWidget(self.btn_footnote)
         self.content_layout.addLayout(nav)
-
-        # --- Controls Bar ---
-        controls = QHBoxLayout()
-        self.speed_controls_layout = controls
-        controls.addWidget(QLabel("Speed:"))
-        self.wpm_label = QLabel(f"{self.wpm}")
-        self.wpm_spin = QSpinBox()
-        self.wpm_spin.setRange(60, 1000)
-        self.wpm_spin.setValue(self.wpm)
-        self.wpm_spin.setFixedWidth(60)
-        self.wpm_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
-        self.wpm_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.wpm_spin.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
-        self.wpm_spin.valueChanged.connect(self.update_speed_from_spinbox)
-        controls.addWidget(self.wpm_spin)
-        self.slider = QSlider(Qt.Orientation.Horizontal)
-        self.slider.setRange(60, 1000)
-        self.slider.setValue(self.wpm)
-        self.slider.setMinimumWidth(80) # Prevent collapse
-        self.slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.slider.valueChanged.connect(self.update_speed_from_slider)
-        controls.addWidget(self.slider, stretch=1) # Allow expansion
-        controls.addSpacing(10)
-        self.display_controls_container = QWidget()
-        dc_layout = QHBoxLayout()
-        dc_layout.setContentsMargins(0, 0, 0, 0)
         
-        # 1. Context Slider
-        dc_layout.addWidget(QLabel("Context:"))
-        self.op_slider = QSlider(Qt.Orientation.Horizontal)
-        self.op_slider.setRange(0, 100)
-        self.op_slider.setValue(self.opacity)
-        self.op_slider.setMinimumWidth(80) # Prevent collapse
-        self.op_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.op_slider.valueChanged.connect(self.update_opacity)
-        dc_layout.addWidget(self.op_slider, stretch=1)
-        dc_layout.addSpacing(15)
-
-        # 2. Flank Slider
-        dc_layout.addWidget(QLabel("Flank:"))
-        self.flank_slider = QSlider(Qt.Orientation.Horizontal)
-        self.flank_slider.setRange(0, 255)
-        self.flank_slider.setValue(self.flank_opacity)
-        self.flank_slider.setMinimumWidth(80) # Prevent collapse
-        self.flank_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.flank_slider.valueChanged.connect(self.update_flank_opacity)
-        dc_layout.addWidget(self.flank_slider, stretch=1)
-        dc_layout.addSpacing(15)
-
-        # 3. Range Slider
-        dc_layout.addWidget(QLabel("Range:"))
-        self.ctx_slider = QSlider(Qt.Orientation.Horizontal)
-        self.ctx_slider.setRange(5, 100)
-        self.ctx_slider.setValue(self.ctx_range)
-        self.ctx_slider.setMinimumWidth(80) # Prevent collapse
-        self.ctx_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.ctx_slider.valueChanged.connect(self.update_ctx_range)
-        dc_layout.addWidget(self.ctx_slider, stretch=1)        
-        self.display_controls_container.setLayout(dc_layout)
-        controls.addWidget(self.display_controls_container, stretch=3)        
-        controls.addSpacing(10)        
-        self.btn_pauses = QPushButton("Pauses")
-        self.btn_pauses.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.btn_pauses.clicked.connect(self.open_pause_settings)
-        controls.addWidget(self.btn_pauses)
-        self.btn_ai_settings = QPushButton("AI Settings")
-        self.btn_ai_settings.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.btn_ai_settings.clicked.connect(self.open_ai_settings)
-        controls.addWidget(self.btn_ai_settings)
-        self.content_layout.addLayout(controls)        
+        # --- Controls Bar ---
+        self.controls = ControlBar(self.settings)
+        
+        # Connect Signals
+        self.controls.wpm_changed.connect(self.set_wpm) # Helper method below
+        self.controls.pause_settings_clicked.connect(self.open_pause_settings)
+        self.controls.ai_settings_clicked.connect(self.open_ai_settings)
+        
+        self.controls.opacity_changed.connect(lambda v: self.set_visual_setting('opacity', v, self.update_context_view))
+        self.controls.flank_changed.connect(lambda v: self.set_visual_setting('flank_opacity', v, lambda: self.rsvp_display.set_flank_opacity(v)))
+        self.controls.ctx_range_changed.connect(lambda v: self.set_visual_setting('ctx_range', v, self.update_context_view))
+        
+        self.content_layout.addWidget(self.controls)
+        
         self.content_widget.setLayout(self.content_layout)
         self.main_layout.addWidget(self.content_widget)
         
@@ -280,8 +224,10 @@ class WordDisplay(QMainWindow):
         # Queue Monitor connections
         self.ai_worker.queue_updated.connect(self.queue_monitor.update_queue_list)
         self.ai_worker.processing_started.connect(self.queue_monitor.set_processing)
+        
         self.ai_worker.processing_finished.connect(self.queue_monitor.set_idle)        
         self.ai_worker.start()         
+        
         self.ai_panel = AIQuestionPanel(self.central_widget)
         self.entity_panel = EntityPanel(self.central_widget)
         
@@ -291,17 +237,44 @@ class WordDisplay(QMainWindow):
         
         self.ai_panel.submit_task_signal.connect(self.ai_worker.add_task)
         
+        # Connect Exclusivity Logic
+        self.ai_panel.panel_toggled.connect(self.on_ai_toggled)
+        self.entity_panel.panel_toggled.connect(self.on_entity_toggled)
+        
         self.resize(1200, 800)
         self.timer = QTimer()
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.show_next_word)
         self.setFocus()
-
+        
         # --- TUTORIAL CHECK ---
         if self.settings.get("first_run", False):
             # Wait for full render
             QTimer.singleShot(500, self.start_tutorial)
+        
+    def set_wpm(self, value):
+        self.wpm = value
+        # Ensure focus returns to reading after adjustment
+        # Note: Do not call self.setFocus() here to allow typing in spinbox
 
+    def set_visual_setting(self, attr_name, value, callback=None):
+        setattr(self, attr_name, value)
+        if callback: callback()
+        
+    def change_speed(self, delta):
+        # Update the ControlBar, not just the local variable
+        new_wpm = self.wpm + delta
+        # Clamp handled by widget, just need to update it
+        self.controls.update_wpm(new_wpm)
+        
+    def on_ai_toggled(self, is_open):
+        if is_open and self.entity_panel.is_expanded:
+            self.entity_panel.collapse()
+
+    def on_entity_toggled(self, is_open):
+        if is_open and self.ai_panel.is_expanded:
+            self.ai_panel.collapse()    
+    
     def start_tutorial(self):
         # Prevent multiple instances
         if hasattr(self, 'tutorial') and self.tutorial.isVisible():
@@ -380,12 +353,25 @@ class WordDisplay(QMainWindow):
             self.ai_panel.deliver_feedback(tab_id, response)
     
     def resizeEvent(self, event):
+        # 1. Check Threshold
+        width = self.width()
+        is_compact = width < 1250
+        
+        # 2. Update Panels
+        if hasattr(self, 'ai_panel'):
+            self.ai_panel.set_button_mode(is_compact)
+            
+        if hasattr(self, 'entity_panel'):
+            self.entity_panel.set_button_mode(is_compact)
+            
+        # 3. Recalculate Positions (Crucial: widths changed, so X positions must shift)
         self.update_overlay_positions()
         
+        # 4. Tutorial
         if hasattr(self, 'tutorial') and self.tutorial.isVisible():
             self.tutorial.setGeometry(self.central_widget.rect())
             self.tutorial.center_msg_box()
-            
+
         super().resizeEvent(event)
     
     def toggle_sidebar(self):
@@ -462,6 +448,10 @@ class WordDisplay(QMainWindow):
 
     def open_pause_settings(self):
         was_running = self.is_running
+        
+        # window size debug line:
+        print(self.size())
+        
         if was_running: self.toggle_reading()
         
         # Pass PAUSE_CONFIG
@@ -601,18 +591,18 @@ class WordDisplay(QMainWindow):
         self.slider.setValue(new_wpm)
 
     def mousePressEvent(self, e):
-        ignore_widgets = [
-            self.slider, self.op_slider, self.flank_slider, self.ctx_slider, 
-            self.pct_btn, self.pct_spin, self.btn_pauses, self.btn_ai_settings,
-            self.wpm_spin
-        ]
+        # Get the actual widget under the mouse cursor
+        widget = QApplication.widgetAt(e.globalPosition().toPoint())
         
-        click_pos = self.mapFromGlobal(e.globalPosition().toPoint())
-        if self.ai_panel.isVisible() and self.ai_panel.geometry().contains(click_pos): pass 
-        elif self.entity_panel.isVisible() and self.entity_panel.geometry().contains(click_pos): pass
-        elif self.childAt(e.pos()) not in ignore_widgets:
-            self.setFocus()
-            self.toggle_reading()
+        # Traverse up the widget hierarchy to check if we clicked a control
+        current = widget
+        while current:
+            if current in [self.controls, self.ai_panel, self.entity_panel, self.sidebar]:
+                return # Click was inside a control panel; ignore it
+            current = current.parent()
+            
+        # If we didn't hit a control panel, toggle reading
+        self.toggle_reading()
             
     def mouseDoubleClickEvent(self, e):
         if self.isFullScreen():
@@ -868,6 +858,10 @@ class WordDisplay(QMainWindow):
             self.is_running = False
             self.rsvp_display.set_status(False)
             self.persist_state()
+    
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(50, self.update_overlay_positions)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

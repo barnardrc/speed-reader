@@ -8,8 +8,14 @@ from PyQt6.QtWidgets import (
     QLabel, QVBoxLayout, QWidget, QProgressBar, QPushButton, QListWidget,
     QFrame, QDialog
 )
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import (
+    QHBoxLayout,  
+    QSpinBox, QSlider
+)
+
 from PyQt6.QtGui import QPainter, QFont, QFontMetrics, QColor, QPen, QLinearGradient
-from PyQt6.QtCore import Qt, QRectF, QPointF, QPoint, pyqtSignal, QEvent
+from PyQt6.QtCore import QRectF, QPointF, QPoint, QEvent
 from utils.text_utils import is_header
 
 class ContextFlowWidget(QWidget):
@@ -24,9 +30,10 @@ class ContextFlowWidget(QWidget):
         self.s_start = 0
         self.s_end = 0
         
-        self.font_ctx = QFont("Georgia", 20)
+        self.max_font_size = 24
+        self.font_ctx = QFont("Georgia", self.max_font_size)
         self.metrics = QFontMetrics(self.font_ctx)
-    
+
     def set_data(self, words, index, ctx_range, opacity, s_start, s_end):
         self.words = words
         self.index = index
@@ -43,6 +50,20 @@ class ContextFlowWidget(QWidget):
         step = -1 if delta > 0 else 1
         
         self.scrolled.emit(step)
+
+    def resizeEvent(self, event):
+        """Dynamically scales context font based on widget height."""
+        h = self.height()
+        
+        # Heuristic: Font size is ~3% of height, clamped between 12 and 24
+        target_size = int(h * 0.04) 
+        new_size = max(12, min(self.max_font_size, target_size))
+        
+        if self.font_ctx.pointSize() != new_size:
+            self.font_ctx.setPointSize(new_size)
+            self.metrics = QFontMetrics(self.font_ctx)
+            
+        super().resizeEvent(event)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -78,8 +99,11 @@ class ContextFlowWidget(QWidget):
         painter.setPen(border_pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(border_rect, 15, 15)
+        
         center_y = w_height / 2
-        line_height = self.metrics.height() + 10
+        
+        # Use updated metrics
+        line_height = self.metrics.height() + 5 # Tighter leading for small screens
         separator_y = center_y + (line_height * 3.5) + 5 
 
         grad_sep = QLinearGradient(0, 0, w_width, 0)
@@ -207,9 +231,12 @@ class RSVPWidget(QWidget):
         self.flank_opacity = 60
         self.is_active = False
         
-        self.font = QFont("Consolas", 48, QFont.Weight.Bold)
+        self.max_font_size = 48
+        self.font = QFont("Consolas", self.max_font_size, QFont.Weight.Bold)
         self.metrics = QFontMetrics(self.font)
-        self.setMinimumHeight(150)
+        
+        # Lower minimum height to accommodate small screens
+        self.setMinimumHeight(80) 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
     def set_word(self, word, prev_word="", next_word=""):
@@ -223,23 +250,39 @@ class RSVPWidget(QWidget):
         self.update()
         
     def set_status(self, is_active):
-        """
-        Updates the peripheral status bar.
-        True = Green (Flowing)
-        False = Red (Stopped)
-        """
         self.is_active = is_active
         self.update()
+
+    def resizeEvent(self, event):
+        """Dynamically scales font based on widget dimensions."""
+        h = self.height()
+        w = self.width()
+        
+        # Constraints: 
+        # 1. Height: Text should occupy ~40% of height to leave room for markers/bar
+        # 2. Width: Assume a long word (approx 15 chars) needs to fit
+        target_h = int(h * 0.4)
+        target_w = int(w / 12) 
+        
+        new_size = min(self.max_font_size, target_h, target_w)
+        new_size = max(14, new_size) # Absolute minimum legibility
+        
+        if self.font.pointSize() != new_size:
+            self.font.setPointSize(new_size)
+            self.metrics = QFontMetrics(self.font)
+            
+        super().resizeEvent(event)
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setFont(self.font)
 
-        bar_width = 300      
-        bar_height = 6       
-        radius = 3           
-        margin_bottom = 10   
+        # Scale bar dimensions
+        bar_height = max(4, int(self.height() * 0.05))
+        bar_width = min(300, int(self.width() * 0.8))
+        radius = bar_height // 2
+        margin_bottom = 10    
 
         x_bar = (self.width() - bar_width) // 2
         y_bar = self.height() - bar_height - margin_bottom
@@ -286,9 +329,13 @@ class RSVPWidget(QWidget):
         left_w = self.metrics.horizontalAdvance(left_part)
         pivot_w = self.metrics.horizontalAdvance(pivot_char)
         right_w = self.metrics.horizontalAdvance(right_part)
+        
+        # Font-relative measurements
+        f_ascent = self.metrics.ascent()
+        f_height = self.metrics.height()
 
         cx = self.width() // 2
-        cy = (self.height() + self.metrics.ascent() - self.metrics.descent()) // 2
+        cy = (self.height() + f_ascent - self.metrics.descent()) // 2
         pivot_draw_x = cx - (pivot_w // 2)
 
         painter.setPen(QColor("#ff5555"))
@@ -298,10 +345,19 @@ class RSVPWidget(QWidget):
         painter.drawText(pivot_draw_x - left_w, cy, left_part)
         painter.drawText(pivot_draw_x + pivot_w, cy, right_part)
 
-        painter.setPen(QPen(QColor("#444"), 2))
-        painter.drawLine(cx, cy - 60, cx, cy - 75)
-        painter.drawLine(cx, cy + 20, cx, cy + 35)
-        base_offset = 250 
+        # Dynamic Pivot Lines (Scale with font size)
+        painter.setPen(QPen(QColor("#444"), max(1, f_height // 20)))
+        
+        top_line_y = cy - f_ascent - (f_height // 4)
+        top_line_len = f_height // 3
+        painter.drawLine(cx, top_line_y, cx, top_line_y - top_line_len)
+        
+        bot_line_y = cy + (f_height // 4)
+        bot_line_len = f_height // 3
+        painter.drawLine(cx, bot_line_y, cx, bot_line_y + bot_line_len)
+        
+        # Calculate Wall Offsets dynamically
+        base_offset = min(250, int(self.width() * 0.35)) 
         padding = 40
         
         actual_left_reach = (pivot_w // 2) + left_w
@@ -489,3 +545,130 @@ class QueueMonitorWidget(QWidget):
     def set_idle(self):
         self.btn_toggle.setText("AI Queue: Idle")
         self.popup.update_status("Active: None", False)
+
+class ControlBar(QWidget):
+    # Signals to communicate with Main Window
+    wpm_changed = pyqtSignal(int)
+    opacity_changed = pyqtSignal(int)
+    flank_changed = pyqtSignal(int)
+    ctx_range_changed = pyqtSignal(int)
+    pause_settings_clicked = pyqtSignal()
+    ai_settings_clicked = pyqtSignal()
+
+    def __init__(self, settings, parent=None):
+        super().__init__(parent)
+        self.settings = settings
+        self.compact_threshold = 750 # Width in pixels to trigger compact mode
+        
+        self.init_ui()
+
+    def init_ui(self):
+        self.layout = QVBoxLayout()
+        self.layout.setContentsMargins(0, 5, 0, 5)
+        self.layout.setSpacing(5)
+        self.setLayout(self.layout)
+
+        # --- Row 1: Primary Controls (Speed, Main Buttons) ---
+        row1 = QHBoxLayout()
+        row1.setContentsMargins(0, 0, 0, 0)
+        
+        row1.addWidget(QLabel("Speed:"))
+        
+        # WPM Spinbox
+        self.wpm_spin = QSpinBox()
+        self.wpm_spin.setRange(60, 1000)
+        self.wpm_spin.setValue(self.settings.get("wpm", 300))
+        self.wpm_spin.setFixedWidth(60)
+        self.wpm_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
+        self.wpm_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.wpm_spin.valueChanged.connect(self.on_spin_change)
+        row1.addWidget(self.wpm_spin)
+
+        # WPM Slider
+        self.wpm_slider = QSlider(Qt.Orientation.Horizontal)
+        self.wpm_slider.setRange(60, 1000)
+        self.wpm_slider.setValue(self.settings.get("wpm", 300))
+        self.wpm_slider.valueChanged.connect(self.on_slider_change)
+        row1.addWidget(self.wpm_slider)
+
+        row1.addSpacing(10)
+
+        # Buttons
+        self.btn_pauses = QPushButton("Pauses")
+        self.btn_pauses.clicked.connect(self.pause_settings_clicked.emit)
+        row1.addWidget(self.btn_pauses)
+
+        self.btn_ai = QPushButton("AI Settings")
+        self.btn_ai.clicked.connect(self.ai_settings_clicked.emit)
+        row1.addWidget(self.btn_ai)
+        
+        # Toggle Button (Hidden by default, used in compact mode)
+        self.btn_visuals = QPushButton("Visuals ▼")
+        self.btn_visuals.setCheckable(True)
+        self.btn_visuals.setFixedWidth(80)
+        self.btn_visuals.clicked.connect(self.toggle_visual_row)
+        self.btn_visuals.hide() 
+        row1.addWidget(self.btn_visuals)
+
+        self.layout.addLayout(row1)
+
+        # --- Row 2: Visual Sliders (Context, Flank, Range) ---
+        self.visual_frame = QFrame()
+        self.visual_layout = QHBoxLayout()
+        self.visual_layout.setContentsMargins(0, 5, 0, 0)
+        self.visual_frame.setLayout(self.visual_layout)
+
+        def add_slider(label, key, min_v, max_v, default, signal):
+            self.visual_layout.addWidget(QLabel(label))
+            sl = QSlider(Qt.Orientation.Horizontal)
+            sl.setRange(min_v, max_v)
+            val = self.settings.get(key, default)
+            sl.setValue(val)
+            sl.valueChanged.connect(signal.emit)
+            self.visual_layout.addWidget(sl)
+            self.visual_layout.addSpacing(10)
+            return sl
+
+        self.op_slider = add_slider("Context:", "opacity", 0, 100, 50, self.opacity_changed)
+        self.flank_slider = add_slider("Flank:", "flank_opacity", 0, 255, 60, self.flank_changed)
+        self.ctx_slider = add_slider("Range:", "context_range", 5, 100, 20, self.ctx_range_changed)
+
+        self.layout.addWidget(self.visual_frame)
+
+    # --- Sync Logic ---
+    def on_spin_change(self, val):
+        self.wpm_slider.blockSignals(True)
+        self.wpm_slider.setValue(val)
+        self.wpm_slider.blockSignals(False)
+        self.wpm_changed.emit(val)
+
+    def on_slider_change(self, val):
+        self.wpm_spin.blockSignals(True)
+        self.wpm_spin.setValue(val)
+        self.wpm_spin.blockSignals(False)
+        self.wpm_changed.emit(val)
+
+    def update_wpm(self, val):
+        """External update"""
+        self.wpm_spin.setValue(val)
+
+    # --- Responsive Logic ---
+    def toggle_visual_row(self, checked):
+        self.visual_frame.setVisible(checked)
+        arrow = "▲" if checked else "▼"
+        self.btn_visuals.setText(f"Visuals {arrow}")
+
+    def resizeEvent(self, event):
+        is_compact = self.width() < self.compact_threshold
+        
+        if is_compact:
+            # Compact Mode: Show Toggle Button, Hide Frame by default
+            self.btn_visuals.show()
+            if not self.btn_visuals.isChecked():
+                self.visual_frame.hide()
+        else:
+            # Full Mode: Hide Toggle Button, Always Show Frame
+            self.btn_visuals.hide()
+            self.visual_frame.show()
+            
+        super().resizeEvent(event)
