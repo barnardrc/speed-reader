@@ -406,7 +406,7 @@ class WordDisplay(QMainWindow):
         if self.eye_worker is not None and self.eye_worker.isRunning():
             return
 
-        print("Initializing Eye Tracking...")
+        print("Starting Eye Tracking...")
         self.eye_worker = EyeTrackingWorker()
         self.eye_worker.update_signal.connect(self.on_eye_data)
         self.eye_worker.start()

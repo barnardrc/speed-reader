@@ -16,7 +16,7 @@ class EyeTrackingWorker(QThread):
         self.running = True
         self.tracker = None
 
-    def run(self):
+    def start(self):
         try:
             self.tracker = EyeTracker()
         except Exception as e:
