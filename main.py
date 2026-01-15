@@ -312,8 +312,12 @@ class WordDisplay(QMainWindow):
         if not self.is_running: return
 
         frame = self.eye_tracker.get_frame()
+        
         if frame is None: return
         
+        if hasattr(self, 'cam_indicator'):
+            self.cam_indicator.ping()
+            
         frame, avg_y = self.eye_tracker.detect_pupils(frame)
         
         # --- DEBUG UPDATE ---
