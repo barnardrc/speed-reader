@@ -116,6 +116,7 @@ class WordDisplay(QMainWindow):
         self.sidebar_layout.addWidget(self.chapter_list)
         
         self.sidebar.setLayout(self.sidebar_layout)
+        self.sidebar.hide()
 
         # --- Content Area ---
         self.content_widget = QWidget()
