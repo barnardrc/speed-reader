@@ -2,7 +2,7 @@
 
 A speed reading application powered by local AI.
 #### Into to RSVP
-[How Fast Can You Read? - Speed Reading Challenge: *by Buffed, YouTube](https://www.youtube.com/watch?v=NdKcDPBQ-Lw&t=30s)
+[How Fast Can You Read? - Speed Reading Challenge: *by Buffed, YouTube]([https://www.youtube.com/watch?v=NdKcDPBQ-Lw&t=30s](https://www.youtube.com/watch?v=NdKcDPBQ-Lw))
 #### De-DRM Guide
 *Credit to u/caelypso299*
 [2024 Guide to DeDRM Kindle Books](https://www.reddit.com/r/Calibre/comments/1c2ryfz/2024_guide_to_dedrm_kindle_books/)
@@ -57,4 +57,5 @@ python main.py
 source venv/bin/activate
 python main.py
 ```
+
 
