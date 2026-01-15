@@ -302,6 +302,7 @@ class WordDisplay(QMainWindow):
             self.cam_indicator.show()
             self.cam_indicator.raise_()
             self.cam_indicator.clicked.connect(self.toggle_debug_window)
+            self.start_eye_tracking()
         
         self.ai_panel.submit_task_signal.connect(self.ai_worker.add_task)
         
@@ -401,6 +402,11 @@ class WordDisplay(QMainWindow):
         self.tutorial.show()
     
     def start_eye_tracking(self):
+        # Prevent starting multiple workers
+        if self.eye_worker is not None and self.eye_worker.isRunning():
+            return
+
+        print("Initializing Eye Tracking...")
         self.eye_worker = EyeTrackingWorker()
         self.eye_worker.update_signal.connect(self.on_eye_data)
         self.eye_worker.start()
