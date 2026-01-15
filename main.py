@@ -380,7 +380,7 @@ class WordDisplay(QMainWindow):
             (self.controls.btn_ai, "Configure your local LLM (Ollama) or adjust how often the AI reads the text."),
         ]
         
-        self.eye_tracker = None
+        self.eye_worker = None
         
         if is_raspberry_pi():
             steps.append((self.rsvp_display, "Tap anywhere in this area to Play or Pause reading."))
@@ -388,19 +388,6 @@ class WordDisplay(QMainWindow):
             
             # Step C: Eye Tracking Test
             steps.append((self.context_display, "EYE_TEST"))
-            try:
-                from utils.eye_tracking.eye_tracker import EyeTracker
-                self.eye_tracker = EyeTracker()
-                print("Eye Tracker Initialized Successfully.")
-            
-                # --- EYE TRACKER INITIALIZATION ---
-                self.eye_worker = None
-        
-                self.start_eye_tracking()
-                
-            except Exception as e:
-                print(f"Eye Tracker Warning: {e}")
-                QMessageBox.warning(self, "Eye Tracker Error", f"Could not init camera: {e}")
                 
         else:
             steps.append((None, "HOTKEYS"))
