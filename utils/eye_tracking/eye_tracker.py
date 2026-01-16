@@ -13,7 +13,7 @@ from collections import deque
 class EyeTracker:
     def __init__(self):
         self.cap = cv2.VideoCapture(
-            "libcamerasrc ! video/x-raw, format=NV12, width=640, height=480, framerate=30/1 ! videoconvert ! video/x-raw, format=BGR ! appsink max-buffer=1 drop=true sync=false",
+            "libcamerasrc ! video/x-raw, format=NV12, width=640, height=480, framerate=30/1 ! videoconvert ! video/x-raw, format=BGR ! appsink max-buffers=1 drop=true sync=false",
             cv2.CAP_GSTREAMER
         )
 
@@ -47,8 +47,13 @@ class EyeTracker:
 
     def get_frame(self):
         if self.cap.isOpened():
-            ret, frame = self.cap.read()
-            if ret: return frame
+            try:
+                if self.cap.grab():
+                    ret, frame = self.cap.retrieve()
+                    if ret:
+                        return frame
+            except Exception:
+                pass
         return None
 
     def smooth_rect(self, current, prev):
