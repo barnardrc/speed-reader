@@ -78,7 +78,7 @@ class EyeTracker:
             # Only look for eyes in the top half
             roi_gray = gray[fy:fy+fh//2, fx:fx+fw]
             
-            eyes = self.eye_cascade.detectMultiScale(roi_gray, 1.1, 5)
+            eyes = self.eye_cascade.detectMultiScale(roi_gray, 1.1, 3)
             
             for (ex, ey, ew, eh) in eyes:
                 # Crop top 25% because eyebrows
