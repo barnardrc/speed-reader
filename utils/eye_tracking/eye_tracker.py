@@ -154,7 +154,7 @@ class EyeTracker:
         avg_ratio = sum(ratios) / len(ratios) if ratios else None
         return frame, avg_ratio
 
-    def calibrate(self, current_ratio):
+    def calibrate_step(self, current_ratio):
         """
         Accumulates samples. Returns True when finished.
         Uses Median to ignore blinks/outliers during the process.

@@ -4,15 +4,16 @@ from eye_tracker import EyeTracker
 
 # --- GLOBAL VARIABLES FOR MOUSE INTERACTION ---
 button_rect = (20, 20, 160, 50)
-calibration_triggered = False
+is_calibrating = False  # State toggle for multi-frame capture
 
 def mouse_callback(event, x, y, flags, param):
-    global calibration_triggered
+    global is_calibrating, tracker
     if event == cv2.EVENT_LBUTTONDOWN:
         bx, by, bw, bh = button_rect
         # Check if click is inside the button rect
         if bx <= x <= bx + bw and by <= y <= by + bh:
-            calibration_triggered = True
+            is_calibrating = True
+            tracker.calibration_buffer = [] # Reset buffer on new click
 
 # --- INITIALIZATION ---
 tracker = EyeTracker()
@@ -31,17 +32,20 @@ while True:
     # Get Pupil Ratio
     frame, avg_ratio = tracker.detect_pupils(frame)
 
+    # --- CALIBRATION LOGIC ---
+    if is_calibrating:
+        if avg_ratio is not None:
+            # Step the calibration (returns True when buffer is full)
+            finished = tracker.calibrate_step(avg_ratio)
+            if finished:
+                is_calibrating = False
+                print(f"Calibration Complete! Baseline: {tracker.baseline_ratio:.3f}")
+        else:
+            # Skip frames where eyes aren't found, but don't crash
+            pass
+
     # Check Logic
     eyes_off, limit_ratio = tracker.check_gaze(avg_ratio)
-
-    # --- CALIBRATION LOGIC  ---
-    if calibration_triggered:
-        if avg_ratio is not None:
-            tracker.calibrate(avg_ratio)
-            print(f"Calibrated at Ratio: {avg_ratio:.2f}")
-        else:
-            print("Cannot calibrate: No eyes detected.")
-        calibration_triggered = False
 
     # --- VISUAL FEEDBACK ---
     
@@ -53,7 +57,12 @@ while True:
     btn_color = (200, 200, 200)
     
     # Status Message
-    if tracker.baseline_ratio is None:
+    if is_calibrating:
+        progress = len(tracker.calibration_buffer)
+        target = tracker.calibration_target
+        msg = f"CALIBRATING... ({progress}/{target})"
+        color = (0, 255, 255) # Yellow
+    elif tracker.baseline_ratio is None:
         msg = "UNCALIBRATED"
         color = white
     elif eyes_off:
@@ -67,7 +76,10 @@ while True:
 
     # --- DRAW UI BUTTON ---
     bx, by, bw, bh = button_rect
-    cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), btn_color, -1)
+    # Turn button yellow while calibrating
+    current_btn_color = (0, 255, 255) if is_calibrating else btn_color
+    
+    cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), current_btn_color, -1)
     cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (50, 50, 50), 2)
     cv2.putText(frame, "CALIBRATE", (bx + 15, by + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
 
@@ -99,7 +111,8 @@ while True:
     if key == ord('q'):
         break
     elif key == ord('c'):
-        calibration_triggered = True
+        is_calibrating = True
+        tracker.calibration_buffer = [] # Reset buffer manually
 
 tracker.release()
 cv2.destroyAllWindows()

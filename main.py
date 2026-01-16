@@ -401,40 +401,32 @@ class WordDisplay(QMainWindow):
     def on_eye_data(self, avg_ratio, eyes_off, limit_ratio):
         """
         Main UI Thread handler. 
-        Reacts to the flags raised by the background eye tracker.
-        NOW LIGHTWEIGHT: No video frame processing here.
         """
         if hasattr(self, 'cam_indicator'):
             self.cam_indicator.ping()
         
-        # Resolve sentinels (-1.0) back to None if needed for logic checks
-        current_ratio = avg_ratio if avg_ratio != -1.0 else None
-
-        if self.calibration_requested and current_ratio is not None:
-            self.eye_worker.calibrate(current_ratio)
-            self.calibration_requested = False
-
-            eyes_off = False 
-
-            # Tutorial Logic
-            if hasattr(self, 'tutorial') and self.tutorial.isVisible():
-                current_msg = self.tutorial.steps[self.tutorial.current_step][1]
-                if current_msg == "EYE_CALIB":
+        # --- REMOVED OLD CALIBRATION BLOCK ---
+        # The worker now handles the buffering internally.
+        
+        # --- TUTORIAL LOGIC ---
+        # We know calibration is done when 'limit_ratio' changes from -1.0 to a real number.
+        if hasattr(self, 'tutorial') and self.tutorial.isVisible():
+            current_msg = self.tutorial.steps[self.tutorial.current_step][1]
+            if current_msg == "EYE_CALIB":
+                # If we have a valid limit, calibration just finished
+                if limit_ratio != -1.0 and limit_ratio is not None:
                     self.tutorial.next_step()
                     if self.is_running: self.toggle_reading()
 
-        # NOTE: Frame updates for debug window are now handled via direct signal connection
-        # so we do NOT call self.debug_window.update_frame() here.
-
-        # We only apply eye tracking if the user has actually started reading
+        # --- GAZE LOGIC ---
         if self.is_running:
             if eyes_off:
-                # PAUSE: User looked up OR eyes were lost
+                # PAUSE
                 if not self.is_gaze_paused:
                     self.is_gaze_paused = True
                     self.rsvp_display.set_status(2) # Orange
             else:
-                # RESUME: Eyes are detected and looking at the target
+                # RESUME
                 if self.is_gaze_paused:
                     self.is_gaze_paused = False
                     self.rsvp_display.set_status(1) # Green
@@ -836,13 +828,18 @@ class WordDisplay(QMainWindow):
             self.timer.stop()
             self.is_running = False
             self.is_gaze_paused = False
-            self.rsvp_display.set_status(0) # 0 = Red
+            self.rsvp_display.set_status(0) # Red
             self.persist_state()
         else:
             # STARTING
             self.is_running = True
-            self.calibration_requested = True
-            self.rsvp_display.set_status(1)  # 1 = Green
+            
+            # --- NEW: DELEGATE TO WORKER ---
+            # Tell the worker to capture the next ~15 frames for calibration
+            if self.eye_worker:
+                self.eye_worker.start_calibration()
+            
+            self.rsvp_display.set_status(1)  # Green
             self.schedule_next_word()
     
     def jump_to_percentage(self):

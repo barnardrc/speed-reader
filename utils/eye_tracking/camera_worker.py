@@ -20,10 +20,16 @@ class EyeTrackingWorker(QThread):
         self.running = True
         self.tracker = None
         self.send_video = False # Default to OFF (Performance Mode)
+        self.is_calibrating
 
     def set_debug_mode(self, enabled):
         """Toggle video frame emission"""
         self.send_video = enabled
+    
+    def start_calibration(self):
+        """Call this from Main to trigger the 15-frame capture"""
+        print("Worker: Starting Calibration Sequence...")
+        self.is_calibrating = True
 
     def run(self):
         try:
@@ -40,15 +46,23 @@ class EyeTrackingWorker(QThread):
                 frame = self.tracker.get_frame()
                 if frame is None: 
                     continue
-
+                
+                
+                
                 # Process
                 frame, avg_ratio = self.tracker.detect_pupils(frame)
+                
+                if self.is_calibrating and avg_ratio is not None:
+                    finished = self.tracker.calibrate_step(avg_ratio)
+                    if finished:
+                        self.is_calibrating = False
                 
                 if avg_ratio is None:
                     eyes_off = True
                     limit_ratio = None
                 else:
                     eyes_off, limit_ratio = self.tracker.check_gaze(avg_ratio)
+                
                 
                 # --- EMIT SIGNALS ---
 
