@@ -23,7 +23,7 @@ class EyeTracker:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         face_path = os.path.join(base_dir, 'haarcascade_frontalface_default.xml')
         # Using eyeglasses model is generally more stable for everyone
-        eye_path = os.path.join(base_dir, 'haarcascade_eye_tree_eyeglasses.xml')
+        eye_path = os.path.join(base_dir, 'haarcascade_eye.xml')
         
         self.face_cascade = cv2.CascadeClassifier(face_path)
         self.eye_cascade = cv2.CascadeClassifier(eye_path)
