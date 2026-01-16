@@ -38,7 +38,7 @@ class EyeTracker:
 
         # Logic Variables
         self.baseline_ratio = None
-        self.threshold_buffer = 0.04 # Increased slightly for stability
+        self.threshold_buffer = 0.01
         self.eyes_off = False
         
         self.history_size = 12
