@@ -15,7 +15,7 @@ class EyeTracker:
     def __init__(self):
 
         self.cap = cv2.VideoCapture(
-            "libcamerasrc ! video/x-raw, format=NV12, width=640, height=480,framerate=30/1 ! videoconvert ! video/x-raw, format=BGR !  appsink",
+            "libcamerasrc ! video/x-raw, format=NV12, width=640, height=480,framerate=30/1 ! videoconvert ! video/x-raw, format=BGR !  appsink drop=True",
             cv2.CAP_GSTREAMER
         )
 
