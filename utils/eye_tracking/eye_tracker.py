@@ -37,12 +37,12 @@ class EyeTracker:
 
         # Logic Variables
         self.baseline_ratio = None
-        self.threshold_buffer = 0.01
+        self.threshold_buffer = 0.03
         self.eyes_off = False
         
         self.history_size = 12
         self.history = deque(maxlen=self.history_size)
-        self.activation_threshold = 0.6
+        self.activation_threshold = 0.7
 
     def get_frame(self):
         if self.cap.isOpened():
@@ -80,7 +80,7 @@ class EyeTracker:
         ratios = []
         current_eyes_rects = []
 
-        faces = self.face_cascade.detectMultiScale(gray, 1.1, 3)
+        faces = self.face_cascade.detectMultiScale(gray, 1.1, 5)
         
         if len(faces) > 0:
             # We assume the largest face is the user
@@ -101,8 +101,8 @@ class EyeTracker:
             eyes = self.eye_cascade.detectMultiScale(
                 roi_gray, 
                 scaleFactor=1.1, 
-                minNeighbors=3, 
-                minSize=(5, 5)
+                minNeighbors=5, 
+                minSize=(10, 10)
             )
             
             # Sort eyes by X position to roughly match left/right consistency
