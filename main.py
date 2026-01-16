@@ -276,7 +276,7 @@ class WordDisplay(QMainWindow):
         self.ai_worker.processing_started.connect(self.queue_monitor.set_processing)
         
         self.ai_worker.processing_finished.connect(self.queue_monitor.set_idle)        
-        self.ai_worker.start()         
+        self.ai_worker.start()          
         
         self.ai_panel = AIQuestionPanel(self.central_widget)
         self.entity_panel = EntityPanel(self.central_widget)
@@ -392,19 +392,26 @@ class WordDisplay(QMainWindow):
 
         print("Starting Eye Tracking...")
         self.eye_worker = EyeTrackingWorker()
-        self.eye_worker.update_signal.connect(self.on_eye_data)
+        
+        # Connect the lightweight LOGIC signal
+        self.eye_worker.logic_signal.connect(self.on_eye_data)
+        
         self.eye_worker.start()
 
-    def on_eye_data(self, frame, avg_ratio, eyes_off, limit_ratio):
+    def on_eye_data(self, avg_ratio, eyes_off, limit_ratio):
         """
         Main UI Thread handler. 
         Reacts to the flags raised by the background eye tracker.
+        NOW LIGHTWEIGHT: No video frame processing here.
         """
         if hasattr(self, 'cam_indicator'):
             self.cam_indicator.ping()
+        
+        # Resolve sentinels (-1.0) back to None if needed for logic checks
+        current_ratio = avg_ratio if avg_ratio != -1.0 else None
 
-        if self.calibration_requested and avg_ratio is not None:
-            self.eye_worker.calibrate(avg_ratio)
+        if self.calibration_requested and current_ratio is not None:
+            self.eye_worker.calibrate(current_ratio)
             self.calibration_requested = False
 
             eyes_off = False 
@@ -416,8 +423,8 @@ class WordDisplay(QMainWindow):
                     self.tutorial.next_step()
                     if self.is_running: self.toggle_reading()
 
-        if self.debug_window and self.debug_window.isVisible():
-            self.debug_window.update_frame(frame, avg_ratio, limit_ratio, eyes_off)
+        # NOTE: Frame updates for debug window are now handled via direct signal connection
+        # so we do NOT call self.debug_window.update_frame() here.
 
         # We only apply eye tracking if the user has actually started reading
         if self.is_running:
@@ -730,15 +737,33 @@ class WordDisplay(QMainWindow):
     
     def toggle_debug_window(self):
         if not is_raspberry_pi(): return
-
+    
         if self.debug_window is None:
             from ui.debug_window import CameraDebugWindow
             self.debug_window = CameraDebugWindow(self)
-
+    
         if self.debug_window.isVisible():
+            # HIDING WINDOW
             self.debug_window.hide()
+            
+            # 1. Turn off video stream in worker (Optimizes Performance)
+            self.eye_worker.set_debug_mode(False)
+            
+            # 2. Disconnect signal
+            try:
+                self.eye_worker.frame_signal.disconnect(self.debug_window.update_frame)
+            except TypeError:
+                pass # Signal wasn't connected
+                
         else:
+            # SHOWING WINDOW
             self.debug_window.show()
+            
+            # 1. Turn on video stream
+            self.eye_worker.set_debug_mode(True)
+            
+            # 2. Connect signal directly to the debug window
+            self.eye_worker.frame_signal.connect(self.debug_window.update_frame)
     
     def keyPressEvent(self, e):
         if not self.words: return
@@ -933,6 +958,7 @@ class WordDisplay(QMainWindow):
     def trigger_background_ai(self):
         if not self.read_buffer:
             return
+        
         max_ctx = self.ai_backend.max_context_length
         overlap = self.ai_backend.comprehension_overlap
 
@@ -961,6 +987,9 @@ class WordDisplay(QMainWindow):
         self.ai_worker.add_task(prompt, metadata)
 
     def trigger_entity_check(self):
+        if not self.entity_buffer:
+            return
+        
         full_context = " ".join(self.entity_buffer)
         
         prompt = (

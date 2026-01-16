@@ -9,12 +9,21 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from utils.eye_tracking.eye_tracker import EyeTracker
 
 class EyeTrackingWorker(QThread):
-    update_signal = pyqtSignal(object, object, bool, object)
+    # Signal 1: Logic (Lightweight, High Priority) - (avg_ratio, eyes_off, limit_ratio)
+    logic_signal = pyqtSignal(float, bool, float)
+    
+    # Signal 2: Frame (Heavy, Low Priority) - (frame)
+    frame_signal = pyqtSignal(object)
     
     def __init__(self):
         super().__init__()
         self.running = True
         self.tracker = None
+        self.send_video = False # Default to OFF (Performance Mode)
+
+    def set_debug_mode(self, enabled):
+        """Toggle video frame emission"""
+        self.send_video = enabled
 
     def run(self):
         try:
@@ -35,15 +44,24 @@ class EyeTrackingWorker(QThread):
                 # Process
                 frame, avg_ratio = self.tracker.detect_pupils(frame)
                 
-                # Guard against None if detection fails completely
                 if avg_ratio is None:
                     eyes_off = True
                     limit_ratio = None
                 else:
                     eyes_off, limit_ratio = self.tracker.check_gaze(avg_ratio)
                 
-                # Emit Data
-                self.update_signal.emit(frame, avg_ratio, eyes_off, limit_ratio)
+                # --- EMIT SIGNALS ---
+
+                # 1. Logic (Always Emit)
+                # Use -1.0 as sentinel for None to ensure consistent float types
+                safe_ratio = avg_ratio if avg_ratio is not None else -1.0
+                safe_limit = limit_ratio if limit_ratio is not None else -1.0
+                
+                self.logic_signal.emit(safe_ratio, eyes_off, safe_limit)
+
+                # 2. Frame (Conditionally Emit)
+                if self.send_video:
+                    self.frame_signal.emit(frame)
 
             except Exception as e:
                 print(f"Error in EyeTracking loop: {e}")
@@ -53,7 +71,6 @@ class EyeTrackingWorker(QThread):
         print("EyeTrackingWorker: Stopped")
 
     def calibrate(self, current_ratio):
-        # Check if tracker is initialized to prevent AttributeError
         if hasattr(self, 'tracker') and self.tracker is not None:
             self.tracker.calibrate(current_ratio)
         else:
