@@ -36,8 +36,10 @@ class EyeTracker:
         self.prev_eyes = []   
 
         # Logic Variables
-        self.baseline_ratio = None
         self.calibration_buffer = []
+        self.calibration_target = 8
+        
+        self.baseline_ratio = None
         self.threshold_buffer = 0.03
         self.eyes_off = False
         
