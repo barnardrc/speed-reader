@@ -37,7 +37,8 @@ class EyeTracker:
 
         # Logic Variables
         self.baseline_ratio = None
-        self.threshold_buffer = 0.02
+        self.calibration_buffer = []
+        self.threshold_buffer = 0.03
         self.eyes_off = False
         
         self.history_size = 12
@@ -152,28 +153,57 @@ class EyeTracker:
         return frame, avg_ratio
 
     def calibrate(self, current_ratio):
-        if current_ratio is not None:
-            self.baseline_ratio = current_ratio
-            print(f"Calibration Set! Baseline Ratio: {self.baseline_ratio:.2f}")
+        """
+        Accumulates samples. Returns True when finished.
+        Uses Median to ignore blinks/outliers during the process.
+        """
+        if current_ratio is None: return False
+        
+        self.calibration_buffer.append(current_ratio)
+        
+        if len(self.calibration_buffer) >= self.calibration_target:
+            # Finalize
+            self.baseline_ratio = np.median(self.calibration_buffer)
+            self.calibration_buffer = [] # Clear for next time
+            print(f"Calibration Set! Baseline: {self.baseline_ratio:.3f}")
+            return True
+            
+        return False
 
     def check_gaze(self, current_ratio):
+        """
+        Returns: (state, limit_ratio)
+        Adjusted for tight tolerances (0.1 difference).
+        """
         if current_ratio is None or self.baseline_ratio is None:
-            return False, None
+            return self.eyes_off, None
 
+        # Calculate the "Cut-off" line
         limit = self.baseline_ratio - self.threshold_buffer
-        is_up_raw = (current_ratio < limit)
+        
+        # Is the eye physically above the line? (Remember: Lower Ratio = Higher Gaze)
+        is_looking_up = (current_ratio < limit)
 
-        self.history.append(1 if is_up_raw else 0)
+        self.history.append(1 if is_looking_up else 0)
 
         if len(self.history) < self.history_size:
-            return False, limit
+            return self.eyes_off, limit
 
         avg_score = sum(self.history) / self.history_size
 
-        if avg_score > self.activation_threshold:
-            self.eyes_off = True  
+        # --- HYSTERESIS ---
+        # Since the signal gap is small (0.1), we need strictly separated thresholds.
+        
+        if self.eyes_off:
+            # CURRENTLY PAUSED (LOOKING UP)
+            # Hard to resume. We need 80% confidence we are looking down.
+            if avg_score < 1 - self.activation_threshold: 
+                self.eyes_off = False
         else:
-            self.eyes_off = False 
+            # CURRENTLY READING (LOOKING DOWN)
+            # Hard to pause. We need 80% confidence we are looking up.
+            if avg_score > self.activation_threshold:
+                self.eyes_off = True
 
         return self.eyes_off, limit
 
