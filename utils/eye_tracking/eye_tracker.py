@@ -42,13 +42,13 @@ class EyeTracker:
 
         # --- CALIBRATION VARIABLES ---
         self.baseline_y = None
-        self.threshold_buffer = 0.02
+        self.threshold_buffer = 0.0
         self.baseline_ratio = None
         self.eyes_off = False
         
         self.history_size = 12
         self.history = deque(maxlen=self.history_size)
-        self.activation_threshold = 0.6
+        self.activation_threshold = 0.7
 
     def get_frame(self):
         if self.cap.isOpened():
