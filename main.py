@@ -187,15 +187,29 @@ class WordDisplay(QMainWindow):
         
         self.context_display = ContextFlowWidget()
         self.context_display.scrolled.connect(self.on_context_scroll)
-        self.display_layout.addWidget(self.context_display, stretch=1)
-
-        # Adjust spacer here for pi layout
+        
+        # --- LAYOUT CONFIGURATION ---
         if is_raspberry_pi():
-            self.display_layout.addStretch(4)
+            # Pi Specific: 
+            # - Stretch 2 for Context (allows expansion for adaptive lines)
+            # - Stretch 3 for Spacer (pushes Reader down for eye tracking)
+            ctx_stretch = 2
+            spacer_stretch = 3
+            rsvp_stretch = 1
+        else:
+            # Desktop Specific: Balanced view
+            ctx_stretch = 1
+            spacer_stretch = 0
+            rsvp_stretch = 1
+
+        self.display_layout.addWidget(self.context_display, stretch=ctx_stretch)
+        
+        if spacer_stretch > 0:
+            self.display_layout.addStretch(spacer_stretch)
 
         self.rsvp_display = RSVPWidget()
         self.rsvp_display.set_flank_opacity(self.flank_opacity)
-        self.display_layout.addWidget(self.rsvp_display, stretch=1)
+        self.display_layout.addWidget(self.rsvp_display, stretch=rsvp_stretch)
         
         self.display_container.setLayout(self.display_layout)
         self.content_layout.addWidget(self.display_container, stretch=2) 
@@ -711,17 +725,8 @@ class WordDisplay(QMainWindow):
     def update_context_view(self):
         if not self.words: return
         s_start, s_end = self.find_sentence_bounds()
-        
-        # --- ADAPTIVE CONTEXT LOGIC ---
-        # On the small Pi screen, we need to fetch more words to fill the 
-        # vertical space (create more lines) compared to Desktop.
-        # We apply a 2.5x multiplier to the slider value specifically for Pi.
-        effective_range = self.ctx_range
-        if is_raspberry_pi():
-            effective_range = int(self.ctx_range * 2)
-            
         self.context_display.set_data(
-            self.words, self.index, effective_range, self.opacity, s_start, s_end
+            self.words, self.index, self.ctx_range, self.opacity, s_start, s_end
         )
 
     def on_chapter_clicked(self, item):
