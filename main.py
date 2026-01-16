@@ -931,6 +931,8 @@ class WordDisplay(QMainWindow):
         self.timer.start(actual_delay)
 
     def trigger_background_ai(self):
+        if not self.read_buffer:
+            return
         max_ctx = self.ai_backend.max_context_length
         overlap = self.ai_backend.comprehension_overlap
 

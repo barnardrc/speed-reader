@@ -514,6 +514,10 @@ class QueueMonitorWidget(QWidget):
         self.layout.setSpacing(0)
         self.setLayout(self.layout)
 
+        # --- STATE TRACKING (Prevents UI Race Conditions) ---
+        self.is_active = False 
+        self.pending_count = 0
+
         self.btn_toggle = QPushButton("AI Queue: Idle")
         self.btn_toggle.setCheckable(True)
         self.btn_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -533,16 +537,14 @@ class QueueMonitorWidget(QWidget):
         self.btn_toggle.clicked.connect(self.toggle_popup)
         self.layout.addWidget(self.btn_toggle)
         
+        # Initialize Popup
+        from ui.widgets import QueueMonitorPopup # Ensure import is here or at top
         self.popup = QueueMonitorPopup(self)
         self.popup.hide()
 
         self.filter_installed = False
 
     def showEvent(self, event):
-        """
-        When this widget is first shown, find the Main Window
-        and attach an event listener to it.
-        """
         super().showEvent(event)
         if not self.filter_installed:
             window = self.window()
@@ -551,21 +553,14 @@ class QueueMonitorWidget(QWidget):
                 self.filter_installed = True
 
     def eventFilter(self, obj, event):
-        """
-        Detect if the Main Window moves or resizes.
-        If so, snap the popup back to the button.
-        """
         if obj == self.window():
             if event.type() in (QEvent.Type.Move, QEvent.Type.Resize):
                 if self.popup.isVisible():
                     self.update_popup_position()
-        
         return super().eventFilter(obj, event)
 
     def update_popup_position(self):
-        """Calculates the global position and moves the popup there."""
         global_pos = self.btn_toggle.mapToGlobal(QPoint(0, self.btn_toggle.height()))
-        
         x_pos = global_pos.x() - (250 - self.btn_toggle.width())
         self.popup.move(x_pos, global_pos.y() + 5)
 
@@ -577,25 +572,37 @@ class QueueMonitorWidget(QWidget):
         else:
             self.popup.hide()
 
-    def update_queue_list(self, task_names):
-        count = len(task_names)
-        current_text = self.popup.lbl_current.text()
-        base_text = "AI Queue: Busy" if "Active" in current_text and "None" not in current_text else "AI Queue: Idle"
-        
-        if count > 0:
-            self.btn_toggle.setText(f"AI Queue: {count} pending")
+    def update_button_text(self):
+        """Centralized text updater to prevent conflicts."""
+        if self.pending_count > 0:
+            self.btn_toggle.setText(f"AI Queue: {self.pending_count} pending")
         else:
-            self.btn_toggle.setText(base_text)
+            status = "Busy" if self.is_active else "Idle"
+            self.btn_toggle.setText(f"AI Queue: {status}")
+
+    def update_queue_list(self, task_names):
+        # --- SAFETY GUARD ---
+        # Prevents the C++ Assertion '!this->empty()' failure
+        if task_names is None:
+            task_names = []
             
-        self.popup.update_list(task_names)
+        self.pending_count = len(task_names)
+        self.update_button_text()
+            
+        if hasattr(self, 'popup'):
+            self.popup.update_list(task_names)
 
     def set_processing(self, task_name):
-        self.btn_toggle.setText("AI Queue: Busy")
-        self.popup.update_status(f"Active: {task_name}", True)
+        self.is_active = True
+        self.update_button_text()
+        if hasattr(self, 'popup'):
+            self.popup.update_status(f"Active: {task_name}", True)
 
     def set_idle(self):
-        self.btn_toggle.setText("AI Queue: Idle")
-        self.popup.update_status("Active: None", False)
+        self.is_active = False
+        self.update_button_text()
+        if hasattr(self, 'popup'):
+            self.popup.update_status("Active: None", False)
 
 class ControlBar(QWidget):
     # Signals to communicate with Main Window
