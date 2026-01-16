@@ -745,25 +745,23 @@ class WordDisplay(QMainWindow):
         if self.debug_window.isVisible():
             # HIDING WINDOW
             self.debug_window.hide()
-            
-            # 1. Turn off video stream in worker (Optimizes Performance)
             self.eye_worker.set_debug_mode(False)
             
-            # 2. Disconnect signal
+            # Disconnect signals
             try:
                 self.eye_worker.frame_signal.disconnect(self.debug_window.update_frame)
+                self.eye_worker.logic_signal.disconnect(self.debug_window.update_logic)
             except TypeError:
-                pass # Signal wasn't connected
+                pass 
                 
         else:
             # SHOWING WINDOW
             self.debug_window.show()
-            
-            # 1. Turn on video stream
             self.eye_worker.set_debug_mode(True)
             
-            # 2. Connect signal directly to the debug window
+            # Connect BOTH signals
             self.eye_worker.frame_signal.connect(self.debug_window.update_frame)
+            self.eye_worker.logic_signal.connect(self.debug_window.update_logic)
     
     def keyPressEvent(self, e):
         if not self.words: return
