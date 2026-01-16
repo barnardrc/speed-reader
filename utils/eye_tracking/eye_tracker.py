@@ -22,7 +22,6 @@ class EyeTracker:
         
         base_dir = os.path.dirname(os.path.abspath(__file__))
         face_path = os.path.join(base_dir, 'haarcascade_frontalface_default.xml')
-        # Using eyeglasses model is generally more stable for everyone
         eye_path = os.path.join(base_dir, 'haarcascade_eye.xml')
         
         self.face_cascade = cv2.CascadeClassifier(face_path)
@@ -33,8 +32,8 @@ class EyeTracker:
         
         # --- SMOOTHING VARIABLES ---
         self.alpha_box = 0.4  # Lower = Smoother Box, Higher = Faster Tracking
-        self.prev_face = None # (x, y, w, h)
-        self.prev_eyes = []   # List of (x, y, w, h)
+        self.prev_face = None
+        self.prev_eyes = []   
 
         # Logic Variables
         self.baseline_ratio = None
@@ -79,10 +78,9 @@ class EyeTracker:
         gray = cv2.bilateralFilter(gray, 10, 25, 25)
         
         ratios = []
-        current_eyes_rects = [] # Store for next frame smoothing
+        current_eyes_rects = []
 
-        # 1. FACE DETECTION (Smoothed)
-        faces = self.face_cascade.detectMultiScale(gray, 1.1, 4)
+        faces = self.face_cascade.detectMultiScale(gray, 1.1, 3)
         
         if len(faces) > 0:
             # We assume the largest face is the user
@@ -104,7 +102,7 @@ class EyeTracker:
                 roi_gray, 
                 scaleFactor=1.1, 
                 minNeighbors=3, 
-                minSize=(20, 20)
+                minSize=(5, 5)
             )
             
             # Sort eyes by X position to roughly match left/right consistency
