@@ -20,7 +20,7 @@ class EyeTrackingWorker(QThread):
         self.running = True
         self.tracker = None
         self.send_video = False # Default to OFF (Performance Mode)
-        self.is_calibrating
+        self.is_calibrating = False
 
     def set_debug_mode(self, enabled):
         """Toggle video frame emission"""
