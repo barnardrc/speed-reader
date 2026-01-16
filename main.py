@@ -711,8 +711,17 @@ class WordDisplay(QMainWindow):
     def update_context_view(self):
         if not self.words: return
         s_start, s_end = self.find_sentence_bounds()
+        
+        # --- ADAPTIVE CONTEXT LOGIC ---
+        # On the small Pi screen, we need to fetch more words to fill the 
+        # vertical space (create more lines) compared to Desktop.
+        # We apply a 2.5x multiplier to the slider value specifically for Pi.
+        effective_range = self.ctx_range
+        if is_raspberry_pi():
+            effective_range = int(self.ctx_range * 2)
+            
         self.context_display.set_data(
-            self.words, self.index, self.ctx_range, self.opacity, s_start, s_end
+            self.words, self.index, effective_range, self.opacity, s_start, s_end
         )
 
     def on_chapter_clicked(self, item):
@@ -773,10 +782,16 @@ class WordDisplay(QMainWindow):
 
     def change_speed(self, delta):
         """Called by Up/Down Arrow Keys"""
-        new_wpm = self.wpm + delta
-        new_wpm = max(self.slider.minimum(), min(self.slider.maximum(), new_wpm))
-        if hasattr(self.controls, 'wpm_slider'):
-             self.controls.wpm_slider.setValue(new_wpm)
+        if not hasattr(self, 'controls') or not hasattr(self.controls, 'wpm_slider'):
+            return
+
+        current_wpm = self.controls.wpm_slider.value()
+        new_wpm = current_wpm + delta
+        
+        new_wpm = max(self.controls.wpm_slider.minimum(), 
+                      min(self.controls.wpm_slider.maximum(), new_wpm))
+        
+        self.controls.wpm_slider.setValue(new_wpm)
 
     def mousePressEvent(self, e):
         # Get the actual widget under the mouse cursor
