@@ -1,13 +1,5 @@
 # RSVP and Eye Tracking as Assistive Reading Technology for Attention Issues
 
-## Executive Summary
-Rapid Serial Visual Presentation (RSVP) is a speed reading technique that displays words sequentially in a fixed screen location. By minimizing saccades (eye movements between words) and return sweeps, RSVP alters the traditional reading process. For neurotypical readers, RSVP can increase reading speed but may decrease comprehension, increase cognitive load, and reduce spatial memory of text. 
-
-However, for individuals with Attention-Deficit/Hyperactivity Disorder (ADHD), the constraints of RSVP offer unique benefits. ADHD readers often experience uncoordinated eye movements, unstable fixations, and difficulties suppressing exploratory saccades. By forcing visual attention to a central point and externally controlling the pacing, RSVP reduces visual distractions and interference. Recent research demonstrates that ADHD readers using RSVP can see up to a ~13% improvement in reading comprehension compared to traditional reading interfaces, while neurotypical readers struggle under the same conditions.
-
-When combined with **eye-tracking technology**, RSVP evolves into a "gaze-contingent" or adaptive display. Eye tracking allows the interface to monitor the reader's attention implicitly. If a user's gaze wanders, fixation durations increase abnormally (indicating cognitive struggle), or if they blink excessively, the eye-tracking system can trigger the RSVP flow to pause, slow down, or backtrack. This creates a real-time, responsive assistive technology specifically tailored to mitigate the symptoms of ADHD, ensuring that readers do not "lose their place" when distractions occur.
-
----
 
 ## Key Research Areas
 
@@ -26,7 +18,7 @@ When combined with **eye-tracking technology**, RSVP evolves into a "gaze-contin
 
 ---
 
-## Annotated Research Paper List
+## Research Paper List
 
 1.  **Reading without eye movements: Improving reading comprehension in young adults with attention-deficit/hyperactivity disorder (ADHD)**
     *   *Authors/Year:* Benwari, Pedercini, Bottini (2023/2025)
