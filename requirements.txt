@@ -1,0 +1,8 @@
+bs4
+pyqt6
+ebooklib
+requests
+pymupdf
+psutil
+markdown
+opencv-python

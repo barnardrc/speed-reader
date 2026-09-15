@@ -1,0 +1,29 @@
+# User documents and local test material
+books/
+test_books/
+*.epub
+*.pdf
+
+# Local application state
+speed_reader_settings.json
+run.bat
+run.sh
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
